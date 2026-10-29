@@ -372,6 +372,7 @@
         tile.appendChild(el('div', 'show-title', item.title));
         tile.appendChild(el('div', 'show-meta', (item.type === 'movie' ? 'Movie' : 'Series') +
             (item.year ? ' · ' + item.year : '') + (item.liked ? '  ♥' : '')));
+        wrap.appendChild(el('div', 'load-ring'));
         wrap.appendChild(tile);
         wrap.appendChild(el('div', 'label', (item.service || '') + (item.reason ? ' · ' + item.reason : '')));
         wrap._item = { kind: 'show', show: item, app: app };
@@ -774,9 +775,19 @@
         log('Preview: trailer ' + key + ' for ' + item.title);
     }
 
+    // Loading indicator: a light sweeping around the highlighted card until its trailer plays.
+    function setLoading(item) {
+        var cards = document.querySelectorAll('#foryou-row .app.show');
+        for (var i = 0; i < cards.length; i++) {
+            var on = !!item && cards[i]._item && cards[i]._item.show === item;
+            cards[i].classList.toggle('loading', on);
+        }
+    }
+
     function startPreview(item) {
         clearTimeout(preview.timer);
         preview.item = item;
+        setLoading(cfg.trailerRelay && cfg.tmdbKey && item.trailer !== '' ? item : null);
         // The previous card's trailer goes at once; never show it behind the new card.
         if (preview.el) preview.el.classList.remove('playing');
         if (preview.frame && cfg.trailerRelay) preview.frame.contentWindow.postMessage({ arn0: 'stop' }, '*');
@@ -793,7 +804,10 @@
             trailerKey(item).then(function (key) {
                 if (preview.item !== item) return;
                 if (key) playTrailer(key, item);
-                else pauseFrame();
+                else {
+                    setLoading(null);
+                    pauseFrame();
+                }
             });
             if (!preview.watch) {
                 // Leaving Home (Settings, All apps, an app) ends the preview and frees the player.
@@ -812,8 +826,12 @@
         if (!data || !preview.item) return;
         var playing = data.event === 'onStateChange' ? data.info === 1 :
             data.event === 'infoDelivery' && data.info && data.info.playerState === 1;
-        if (playing) preview.el.classList.add('playing');
+        if (playing) {
+            preview.el.classList.add('playing');
+            setLoading(null);
+        }
         if (data.event === 'onError') {
+            setLoading(null);
             log('Preview: YouTube refused (' + data.info + '), showing artwork');
             preview.el.classList.remove('playing');
         }
@@ -833,6 +851,7 @@
     // full: also unload the player (leaving Home); otherwise it stays warm for the next card.
     function stopPreview(full) {
         clearTimeout(preview.timer);
+        setLoading(null);
         preview.item = null;
         if (full) {
             clearInterval(preview.watch);
