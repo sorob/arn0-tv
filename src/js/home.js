@@ -187,6 +187,8 @@
         var on = window.ForYou ? ForYou.render($('foryou-row')) : false;
         $('foryou-section').classList.toggle('hidden', !on);
         document.getElementById('home').classList.toggle('with-foryou', on);
+        var list = on && ForYou.renderList ? ForYou.renderList($('mylist-row')) : false;
+        $('mylist-section').classList.toggle('hidden', !list);
     }
 
     function applyInputStatus() {
@@ -422,7 +424,8 @@
             startRow: 1,
             hints: [['OK', 'Open'], ['▲', 'Settings']],
             rows: function () {
-                return [[$('gear')], UI.children($('apps-row')), UI.children($('foryou-row')), UI.children($('inputs-row'))]
+                return [[$('gear')], UI.children($('apps-row')), UI.children($('foryou-row')), UI.children($('inputs-row')),
+                    UI.children($('mylist-row'))]
                     .filter(function (r) { return r.length; });
             },
             activate: function (item) {
@@ -433,6 +436,8 @@
                 else if (/^show/.test(item.kind)) ForYou.activate(item, launchApp);
             },
             onFocus: function (target) {
+                // My List sits below the screen edge: Home scrolls up while it has focus.
+                $('home').classList.toggle('list-focus', !!target && target.parentNode === $('mylist-row'));
                 if (window.ForYou) ForYou.focus(target && target._item);
             },
             // Home is the root: Back does nothing.

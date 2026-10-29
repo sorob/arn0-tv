@@ -156,7 +156,6 @@
     // ---------- My List (per profile): titles saved to watch later, newest first
 
     var MAX_WATCHLIST = 60;
-    var MAX_WATCHLIST_ON_ROW = 8;
 
     function inList(show) {
         var k = key(show);
@@ -725,22 +724,31 @@
             c.note = c.show.openedAt ? openedAgo(c.show.openedAt) : 'You loved it';
             row.appendChild(card(c.show, c));
         });
-        var listed = 0;
-        taste.watchlist.forEach(function (w) {
-            var k = key(w);
-            if (shown[k] || listed >= MAX_WATCHLIST_ON_ROW || taste.watched.indexOf(k) !== -1) return;
-            shown[k] = true;
-            listed++;
-            var badges = ['My List'];
-            var a = taste.airing[k];
-            if (a && a.badge) badges.push(a.badge);
-            row.appendChild(card(w, { badges: badges, note: w.reason || 'On your list', resume: !!w.openedAt }));
-        });
-        taste.items.forEach(function (item) { if (!shown[key(item)]) row.appendChild(card(item)); });
+        taste.items.forEach(function (item) { if (!shown[key(item)] && !inList(item)) row.appendChild(card(item)); });
         if (fetching && !taste.items.length) row.appendChild(noteCard('Finding something to watch…'));
         else if (taste.error && !taste.items.length) row.appendChild(noteCard('Suggestions unavailable · OK to retry'));
         else row.appendChild(noteCard(fetching ? 'Updating…' : (taste.query ? '↻  Back to For you' : '↻  New suggestions')));
         return true;
+    }
+
+    // My List row at the bottom of Home (its own shelf; hidden while the list is empty).
+    function renderList(row) {
+        row.innerHTML = '';
+        if (!enabled()) return false;
+        taste.watchlist.forEach(function (w) {
+            var k = key(w);
+            if (taste.watched.indexOf(k) !== -1) return;
+            var a = taste.airing[k];
+            var extra = { note: w.reason || 'Added ' + addedAgo(w.addedAt), resume: !!w.openedAt };
+            if (a && a.badge) extra.badges = [a.badge];
+            row.appendChild(card(w, extra));
+        });
+        return row.children.length > 0;
+    }
+
+    function addedAgo(at) {
+        var days = Math.floor((Date.now() - (at || Date.now())) / DAY_MS);
+        return days < 1 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';
     }
 
     function openedAgo(at) {
@@ -1205,7 +1213,7 @@
     function prefetchTrailers() {
         if (!cfg.tmdbKey || cfg.previews === false) return;
         resumeCards().forEach(function (c) { trailerKey(c.show); });
-        taste.watchlist.slice(0, MAX_WATCHLIST_ON_ROW).forEach(function (w) { trailerKey(w); });
+        taste.watchlist.slice(0, 12).forEach(function (w) { trailerKey(w); });
         taste.items.forEach(function (item) { trailerKey(item); });
     }
 
@@ -1250,7 +1258,7 @@
      * told to switch), 85% YouTube buffering, 100% playing, then it fades. 0 hides it.
      */
     function cardFor(item) {
-        var cards = document.querySelectorAll('#foryou-row .app.show');
+        var cards = document.querySelectorAll('#foryou-row .app.show, #mylist-row .app.show');
         for (var i = 0; i < cards.length; i++) {
             if (cards[i]._item && cards[i]._item.show === item) return cards[i];
         }
@@ -1258,7 +1266,7 @@
     }
 
     function setProgress(item, pct) {
-        var bars = document.querySelectorAll('#foryou-row .load-bar.active');
+        var bars = document.querySelectorAll('#foryou-row .load-bar.active, #mylist-row .load-bar.active');
         for (var i = 0; i < bars.length; i++) {
             if (!item || bars[i].parentNode.parentNode._item.show !== item) {
                 bars[i].className = 'load-bar';
@@ -1341,7 +1349,7 @@
         clearTimeout(preview.timer);
         clearTimeout(preview.videoTimer);
         preview.item = item;
-        var old = document.querySelectorAll('#foryou-row .load-bar[data-p]');
+        var old = document.querySelectorAll('#foryou-row .load-bar[data-p], #mylist-row .load-bar[data-p]');
         for (var i = 0; i < old.length; i++) old[i].setAttribute('data-p', '0');
         setLoading(cfg.trailerRelay && cfg.tmdbKey && item.trailer !== '' ? item : null);
         // The previous card's trailer goes at once; silence it once, not on every press.
@@ -1501,6 +1509,7 @@
         refresh: refresh,
         noteAppOpen: noteAppOpen,
         focus: focus,
+        renderList: renderList,
         stopPreview: function () { stopPreview(true); },
         reset: reset,
         stats: function () {

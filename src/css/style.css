@@ -1453,3 +1453,41 @@ html.preview, html.preview body {
     transform-origin: 0 50%;
     transition: transform 0.3s ease-out;
 }
+
+/* ---------- My List row (below Consoles; Home scrolls up while it has focus) ---------- */
+
+#home.with-foryou #mylist-section { top: 1000px; }
+#home #mylist-section .shelf h2, #home.with-foryou #mylist-section h2 { margin-bottom: 18px; font-size: 22px; }
+
+#home.with-foryou .clock,
+#home.with-foryou .gear,
+#home.with-foryou .shelf {
+    will-change: transform;
+}
+
+#home.list-focus .clock,
+#home.list-focus .gear,
+#home.list-focus #apps-section,
+#home.list-focus #foryou-section,
+#home.list-focus #inputs-section {
+    transform: translateY(-330px);
+    opacity: 0.35;
+}
+
+#home.list-focus #mylist-section {
+    transform: translateY(-330px);
+}
+
+/* Previewing from My List: the list row drops to the bottom, everything else goes. */
+.previewing #home.list-focus .clock,
+.previewing #home.list-focus .gear,
+.previewing #home.list-focus #apps-section,
+.previewing #home.list-focus #foryou-section,
+.previewing #home.list-focus #inputs-section {
+    opacity: 0;
+    transform: translateY(-330px);
+}
+
+.previewing #home.list-focus #mylist-section {
+    transform: translateY(-230px);
+}
