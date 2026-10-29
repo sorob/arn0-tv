@@ -224,6 +224,7 @@
         if (window.Weather) actions = actions.concat(Weather.actions());
         if (window.RenderProbe) actions = actions.concat(RenderProbe.actions());
         if (window.PlatformProbe) actions = actions.concat(PlatformProbe.actions());
+        if (window.DeepLinks) actions = actions.concat(DeepLinks.actions());
         inputs().forEach(function (input) {
             var item = { kind: 'input', hdmi: input.hdmi, label: input.label };
             var name = input.label + ' (HDMI ' + input.hdmi + ')';

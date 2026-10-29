@@ -493,21 +493,113 @@
 
     // ---------- Deep links: open the title itself, not just the app
     //
-    // Per-service ids come from Wikidata (TMDB external_ids -> wikidata_id -> claims). Only
-    // Netflix is wired so far: Samsung's Netflix app takes "m=<id>&source_type=4" as the app
-    // control PAYLOAD. Anything else, or a refusal, falls back to opening the app.
+    // Per-service ids come from Wikidata (TMDB external_ids -> wikidata_id -> claims) and are
+    // handed to the streaming app as app control data: operation "view", key PAYLOAD. That is
+    // also how Samsung's Smart Hub Preview tiles open a title (PAYLOAD = '{"values":"<action
+    // data>"}', see developer.samsung.com .../smart-hub-preview/implementing-public-preview),
+    // so apps with Preview tiles parse a PAYLOAD — but each app decides what it accepts, and
+    // launchAppControl "succeeds" even when the app ignores it. So each service has ONE built-in
+    // payload (first in `payloads`), the rest are alternates kept for the Lab's deep-link tests.
+    // config.js deepLinks.<service> overrides the built-in choice (a template string, or
+    // { payload, op }, or false for plain launch). Templates: {id} = the Wikidata value,
+    // {url} = that id's web URL. Every attempt is logged (DevLog) with the exact payload.
+    //
+    // Field reports (Tizen 9, 2024 TV; github.com/MankhongGarden/samsung-tizen-tv-home-notes):
+    // Prime Video opens the title with '{"values":"<gti>"}'; Netflix, Disney+ and HBO Max only
+    // opened the app for every form tried. Older Tizen (this projector: 5.5) is untested.
 
-    var WIKIDATA_IDS = {
-        netflix: ['P1874'],
-        disney: ['P7595', 'P7596'],
-        prime: ['P8055'],
-        hbo: ['P8298'],
-        hulu: ['P6466', 'P6467'],
-        apple: ['P9586', 'P9751']
+    var LINKS_VERSION = 2;      // bump when the Wikidata properties below change
+    var EDEN = 'http://samsung.com/appcontrol/operation/eden_resume';
+    var linkCfg = window.LAUNCHER_CONFIG.deepLinks || {};
+
+    var DEEP_LINKS = {
+        netflix: {
+            label: 'Netflix', match: /netflix/i, appId: 'org.tizen.netflix-app',
+            ids: [{ prop: 'P1874', url: 'https://www.netflix.com/title/{id}' }],     // 80057281
+            // Netflix's DIAL/launch handler reads m=<title URL>; source_type=4 marks a DIAL-style
+            // launch. "title" opens the details page, "watch" starts playback.
+            payloads: [
+                'm=https://www.netflix.com/title/{id}&source_type=4',
+                'm={id}&source_type=4',
+                'm=https://www.netflix.com/watch/{id}&source_type=4',
+                { payload: 'm=https://www.netflix.com/title/{id}&source_type=4', op: EDEN }
+            ],
+            test: { title: 'Stranger Things', id: '80057281' }
+        },
+        prime: {
+            label: 'Prime Video', match: /prime ?video|amazon/i, appId: 'org.tizen.primevideo',
+            ids: [
+                // P14440 "Prime Video ID": amzn1.dv.gti.<uuid> (the form the app takes; sparse
+                // on Wikidata, ~250 titles). P8055 is the amazon.com ASIN (B0xxxxxxxx), unproven.
+                { prop: 'P14440', url: 'https://www.primevideo.com/detail/{id}' },
+                { prop: 'P8055', url: 'https://www.amazon.com/gp/video/detail/{id}' }
+            ],
+            payloads: ['{"values":"{id}"}', '{id}', { payload: '{"values":"{id}"}', op: EDEN }],
+            test: { title: '12 Years a Slave', id: 'amzn1.dv.gti.ff2a6d91-ad00-4db8-9cfa-f3a70993476a' },
+            tests: [{ title: 'The Boys (ASIN)', id: 'B07QQQ52B3', prop: 'P8055' }]
+        },
+        disney: {
+            label: 'Disney+', match: /disney/i, appId: 'MCmYXNxgcu.DisneyPlus',
+            ids: [
+                { prop: 'P13902', url: 'https://www.disneyplus.com/browse/{id}' },      // entity-<uuid>
+                { prop: 'P7596', url: 'https://www.disneyplus.com/series/x/{id}' },     // legacy 12 chars
+                { prop: 'P7595', url: 'https://www.disneyplus.com/movies/x/{id}' }
+            ],
+            payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}'],
+            test: { title: 'The Mandalorian', id: 'entity-422f6dcc-226f-44e7-98d4-22de69b31cf3' }
+        },
+        hbo: {
+            label: 'HBO Max', match: /hbo|\bmax\b/i, appId: 'cj37Ni3qXM.HBONow',
+            ids: [{ prop: 'P8298', url: 'https://play.hbomax.com/{id}' }],            // show/<uuid>, movie/<uuid>
+            payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}'],
+            test: { title: 'The Last of Us', id: 'show/93ba22b1-833e-47ba-ae94-8ee7b9eefa9a' }
+        },
+        hulu: {
+            label: 'Hulu', match: /hulu/i, appId: 'LBUAQX1exg.Hulu',
+            ids: [
+                { prop: 'P6467', url: 'https://www.hulu.com/series/{id}' },              // <uuid>
+                { prop: 'P6466', url: 'https://www.hulu.com/movie/{id}' }
+            ],
+            payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}'],
+            test: { title: 'The Bear', id: '05eb6a8e-90ed-4947-8c0b-e6536cbddd5f' }
+        },
+        apple: {
+            label: 'Apple TV', match: /apple ?tv|aria-video/i, appId: 'com.samsung.tv.aria-video',
+            ids: [
+                { prop: 'P9751', url: 'https://tv.apple.com/show/{id}' },                // umc.cmc.<id>
+                { prop: 'P9586', url: 'https://tv.apple.com/movie/{id}' }
+            ],
+            payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}'],
+            test: { title: 'Severance', id: 'umc.cmc.1srk2goyh2q2zdxcx605w8vtx' }
+        },
+        peacock: {
+            label: 'Peacock', match: /peacock/i, appId: 'gzcc4LRFBF.Peacock',
+            ids: [{ prop: 'P11815', url: 'https://www.peacocktv.com/stream-{id}' }],   // tv/<slug>, movies/<slug>
+            payloads: ['{"values":"{url}"}', '{url}'],
+            test: { title: 'Brooklyn Nine-Nine', id: 'tv/brooklyn-nine-nine' }
+        },
+        plex: {
+            label: 'Plex', match: /plex/i, appId: 'kIciSQlYEM.plex',
+            ids: [{ prop: 'P11460', url: 'https://app.plex.tv/desktop/#!/provider/tv.plex.provider.metadata/details?key=/library/metadata/{id}' }],
+            payloads: ['{"values":"{url}"}', '{url}'],
+            test: { title: 'Casino Royale', id: '5d7768686f4521001eaa5cac' }
+        }
+        // YouTube: suggestions are films and series, not videos, so it is not wired. Its
+        // app control and DIAL "v=" are reported ignored; the cast (Lounge) protocol works.
     };
 
+    function serviceFor(app) {
+        var hay = (app.id || '') + ' ' + (app.label || '');
+        var keys = Object.keys(DEEP_LINKS);
+        for (var i = 0; i < keys.length; i++) {
+            if (DEEP_LINKS[keys[i]].match.test(hay)) return keys[i];
+        }
+        return null;
+    }
+
+    // Wikidata property -> value, for every property any service uses.
     function serviceLinks(item) {
-        if (item.links) return Promise.resolve(item.links);
+        if (item.links && item.links._v === LINKS_VERSION) return Promise.resolve(item.links);
         return findTmdb(item).then(function () {
             if (!item.tmdbId) return {};
             return tmdb('/' + item.kind + '/' + item.tmdbId + '/external_ids').then(function (ext) {
@@ -517,14 +609,14 @@
                     xhr.open('GET', 'https://www.wikidata.org/wiki/Special:EntityData/' + ext.wikidata_id + '.json', true);
                     xhr.timeout = 10000;
                     xhr.onload = function () {
-                        var links = {};
+                        var links = { qid: ext.wikidata_id };
                         try {
                             var ent = JSON.parse(xhr.responseText).entities;
                             var claims = ent[Object.keys(ent)[0]].claims || {};
-                            Object.keys(WIKIDATA_IDS).forEach(function (svc) {
-                                WIKIDATA_IDS[svc].forEach(function (p) {
-                                    var c = claims[p] && claims[p][0] && claims[p][0].mainsnak.datavalue;
-                                    if (c && !links[svc]) links[svc] = c.value;
+                            Object.keys(DEEP_LINKS).forEach(function (svc) {
+                                DEEP_LINKS[svc].ids.forEach(function (ref) {
+                                    var c = claims[ref.prop] && claims[ref.prop][0] && claims[ref.prop][0].mainsnak.datavalue;
+                                    if (c && typeof c.value === 'string') links[ref.prop] = c.value;
                                 });
                             });
                         } catch (e) {}
@@ -535,36 +627,110 @@
                 });
             });
         }).then(function (links) {
+            links._v = LINKS_VERSION;
             item.links = links;
             save();
             return links;
         }).catch(function () { return {}; });
     }
 
-    function launchWithPayload(appId, payload) {
+    // First id the service can use: { id, url }.
+    function pickId(svc, links) {
+        var ids = DEEP_LINKS[svc].ids;
+        for (var i = 0; i < ids.length; i++) {
+            var v = links[ids[i].prop];
+            if (v) return { id: v, url: ids[i].url.replace('{id}', v), prop: ids[i].prop };
+        }
+        return null;
+    }
+
+    function fillTemplate(tpl, ref) {
+        var json = /^\s*\{/.test(tpl);
+        function esc(s) { return json ? JSON.stringify(s).slice(1, -1) : s; }
+        return tpl.replace(/\{id\}/g, esc(ref.id)).replace(/\{url\}/g, esc(ref.url));
+    }
+
+    // The payload to use for a service: config override, else the built-in first choice.
+    // Returns null for "no deep link" (config set to false).
+    function chosenPayload(svc, index) {
+        var p = index == null ? linkCfg[svc] : null;
+        if (p === false) return null;
+        if (p == null) p = DEEP_LINKS[svc].payloads[index || 0];
+        return typeof p === 'string' ? { payload: p } : p;
+    }
+
+    function launchWithPayload(appId, payload, op) {
         return new Promise(function (resolve, reject) {
-            var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', null, null, null,
+            var ctrl = new tizen.ApplicationControl(op || 'http://tizen.org/appcontrol/operation/view', null, null, null,
                 [new tizen.ApplicationControlData('PAYLOAD', [payload])]);
             tizen.application.launchAppControl(ctrl, appId, resolve, reject);
         });
     }
 
+    // Launches appId with the service's payload for ref; resolves when the TV accepted it.
+    function deepLink(svc, appId, ref, title, index) {
+        var choice = chosenPayload(svc, index);
+        if (!choice) return Promise.reject(new Error('deep link disabled in config'));
+        var payload = fillTemplate(choice.payload, ref);
+        var op = choice.op || null;
+        log('Deep link: ' + DEEP_LINKS[svc].label + ' "' + title + '" app=' + appId +
+            (op ? ' op=' + op.split('/').pop() : '') + ' PAYLOAD=' + payload +
+            (index != null ? ' (variant ' + (index + 1) + ')' : linkCfg[svc] != null ? ' (config)' : ''));
+        if (!window.tizen) return Promise.reject(new Error('no tizen API (browser preview)'));
+        return launchWithPayload(appId, payload, op).then(function () {
+            log('Deep link: ' + DEEP_LINKS[svc].label + ' accepted (the app may still ignore the payload)');
+        });
+    }
+
     function openTitle(item, launch) {
         var show = item.show;
+        var svc = serviceFor(item.app);
+        if (!svc || !window.tizen) return launch(item.app);
         serviceLinks(show).then(function (links) {
-            var id = /netflix/i.test(item.app.id + item.app.label) && links.netflix;
-            if (!id || !window.tizen) return launch(item.app);
-            log('Deep link: Netflix ' + id + ' for ' + show.title);
+            var ref = pickId(svc, links);
+            if (!ref) {
+                log('Deep link: no ' + DEEP_LINKS[svc].label + ' id on Wikidata for ' + show.title +
+                    (links.qid ? ' (' + links.qid + ')' : '') + ', opening app');
+                return launch(item.app);
+            }
+            if (!chosenPayload(svc)) return launch(item.app);
             noteAppOpen(item.app);
             stopPreview(true);
-            launchWithPayload(item.app.id, 'm=' + id + '&source_type=4').then(function () {
-                log('Deep link: Netflix accepted');
-            }, function (err) {
+            deepLink(svc, item.app.id, ref, show.title + ' [' + ref.prop + ']').catch(function (err) {
                 log('Deep link failed (' + DevLog.errorText(err) + '), opening app');
                 launch(item.app);
             });
         });
     }
+
+    // Lab: one entry per service with a known title id, plus one per alternate payload.
+    window.DeepLinks = {
+        services: DEEP_LINKS,
+        open: deepLink,
+        actions: function () {
+            var out = [];
+            Object.keys(DEEP_LINKS).forEach(function (svc) {
+                var d = DEEP_LINKS[svc];
+                [d.test].concat(d.tests || []).forEach(function (t) {
+                    var idRef = d.ids.filter(function (r) { return r.prop === t.prop; })[0] || d.ids[0];
+                    var ref = { id: t.id, url: idRef.url.replace('{id}', t.id) };
+                    d.payloads.forEach(function (p, i) {
+                        var tpl = typeof p === 'string' ? p : p.payload + ' via ' + p.op.split('/').pop();
+                        out.push({
+                            label: 'Deep link test: ' + d.label + ' ' + t.title + (i ? '  (alt ' + (i + 1) + ': ' + tpl + ')' : ''),
+                            run: function () {
+                                stopPreview(true);
+                                deepLink(svc, d.appId, ref, t.title, i).catch(function (err) {
+                                    log('Deep link test: ' + d.label + ' FAILED ' + DevLog.errorText(err));
+                                });
+                            }
+                        });
+                    });
+                });
+            });
+            return out;
+        }
+    };
 
     // ---------- Details: description and actions for one card (trailer keeps playing behind)
 

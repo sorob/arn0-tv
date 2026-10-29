@@ -108,6 +108,25 @@ window.LAUNCHER_CONFIG = {
         select: { freq: 1320, ms: 55, type: 'triangle' }
     },
 
+    /*
+     * "Open in <App>" on a For you title tries to open that title inside the app (js/foryou.js,
+     * DEEP_LINKS). null = the built-in payload for that service. Otherwise a PAYLOAD template
+     * ({id} = the service's Wikidata id, {url} = its web URL), or { payload, op } to also set
+     * the app control operation, or false to just open the app. Find one that works with the
+     * Lab screen's "Deep link test" entries, then set it here or in js/config.local.js.
+     *   e.g. disney: '{url}'   netflix: 'm={id}&source_type=4'
+     */
+    deepLinks: {
+        netflix: null,
+        prime: null,
+        disney: null,
+        hbo: null,
+        hulu: null,
+        apple: null,
+        peacock: null,
+        plex: null
+    },
+
     // Development only: where the Lab screen sends its logs (npm run devlog on your computer).
     // null disables it; set it to http://<your-computer-ip>:8099/log while debugging.
     devLogUrl: null
