@@ -362,6 +362,8 @@
         var wrap = el('div', 'app show');
         var tile = el('div', 'tile show-tile');
         tile.style.background = brand ? brand.bg : '#2a2f3a';
+        var bar = el('div', 'load-bar');
+        bar.appendChild(el('div', 'load-fill'));
         if (item.image) {
             var img = new Image();
             img.className = 'show-art';
@@ -370,9 +372,9 @@
             tile.appendChild(el('div', 'show-shade'));
         }
         tile.appendChild(el('div', 'show-title', item.title));
+        tile.appendChild(bar);
         tile.appendChild(el('div', 'show-meta', (item.type === 'movie' ? 'Movie' : 'Series') +
             (item.year ? ' · ' + item.year : '') + (item.liked ? '  ♥' : '')));
-        wrap.appendChild(el('div', 'load-ring'));
         wrap.appendChild(tile);
         wrap.appendChild(el('div', 'label', (item.service || '') + (item.reason ? ' · ' + item.reason : '')));
         wrap._item = { kind: 'show', show: item, app: app };
@@ -754,6 +756,7 @@
         if (preview.frame && cfg.trailerRelay) {
             // Player already loaded: switch video in place.
             preview.frame.contentWindow.postMessage({ arn0: 'load', v: key }, '*');
+            setProgress(item, 60);
         } else {
             removeFrame();
             var frame = document.createElement('iframe');
@@ -766,6 +769,7 @@
                 '&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&loop=1&playlist=' + key +
                 '&enablejsapi=1';
             frame.onload = function () {
+                if (preview.item === item) setProgress(item, 60);
                 if (cfg.trailerRelay) return;   // the relay says "listening" to the player itself
                 try { frame.contentWindow.postMessage('{"event":"listening","id":1}', '*'); } catch (e) {}
             };
@@ -775,18 +779,57 @@
         log('Preview: trailer ' + key + ' for ' + item.title);
     }
 
-    // Loading indicator: a light sweeping around the highlighted card until its trailer plays.
-    function setLoading(item) {
+    /*
+     * Loading line along the bottom of the highlighted card. It only advances when a real step
+     * finishes: 10% started, 35% trailer id from TMDB, 60% relay page loaded (or the warm player
+     * told to switch), 85% YouTube buffering, 100% playing, then it fades. 0 hides it.
+     */
+    function cardFor(item) {
         var cards = document.querySelectorAll('#foryou-row .app.show');
         for (var i = 0; i < cards.length; i++) {
-            var on = !!item && cards[i]._item && cards[i]._item.show === item;
-            cards[i].classList.toggle('loading', on);
+            if (cards[i]._item && cards[i]._item.show === item) return cards[i];
         }
+        return null;
+    }
+
+    function setProgress(item, pct) {
+        var bars = document.querySelectorAll('#foryou-row .load-bar.active');
+        for (var i = 0; i < bars.length; i++) {
+            if (!item || bars[i].parentNode.parentNode._item.show !== item) {
+                bars[i].className = 'load-bar';
+                bars[i].firstChild.style.transform = '';
+            }
+        }
+        if (!item) return;
+        var card = cardFor(item);
+        var bar = card && card.querySelector('.load-bar');
+        if (!bar) return;
+        var fill = bar.firstChild;
+        var now = parseFloat(bar.getAttribute('data-p') || '0');
+        if (pct <= now && pct < 100) return;      // never go backwards
+        bar.setAttribute('data-p', String(pct));
+        bar.className = 'load-bar active' + (pct >= 100 ? ' done' : '');
+        fill.style.transform = 'scaleX(' + (pct / 100) + ')';
+        if (pct >= 100) {
+            setTimeout(function () {
+                if (bar.getAttribute('data-p') === '100') {
+                    bar.className = 'load-bar';
+                    bar.setAttribute('data-p', '0');
+                    fill.style.transform = '';
+                }
+            }, 600);
+        }
+    }
+
+    function setLoading(item) {
+        setProgress(item, item ? 10 : 0);
     }
 
     function startPreview(item) {
         clearTimeout(preview.timer);
         preview.item = item;
+        var old = document.querySelectorAll('#foryou-row .load-bar');
+        for (var i = 0; i < old.length; i++) old[i].setAttribute('data-p', '0');
         setLoading(cfg.trailerRelay && cfg.tmdbKey && item.trailer !== '' ? item : null);
         // The previous card's trailer goes at once; never show it behind the new card.
         if (preview.el) preview.el.classList.remove('playing');
@@ -803,7 +846,10 @@
             document.documentElement.classList.add('previewing');
             trailerKey(item).then(function (key) {
                 if (preview.item !== item) return;
-                if (key) playTrailer(key, item);
+                if (key) {
+                    setProgress(item, 35);
+                    playTrailer(key, item);
+                }
                 else {
                     setLoading(null);
                     pauseFrame();
@@ -826,9 +872,12 @@
         if (!data || !preview.item) return;
         var playing = data.event === 'onStateChange' ? data.info === 1 :
             data.event === 'infoDelivery' && data.info && data.info.playerState === 1;
+        var state = data.event === 'onStateChange' ? data.info :
+            (data.event === 'infoDelivery' && data.info ? data.info.playerState : undefined);
+        if (state === 3 || state === -1) setProgress(preview.item, 85);
         if (playing) {
             preview.el.classList.add('playing');
-            setLoading(null);
+            setProgress(preview.item, 100);
         }
         if (data.event === 'onError') {
             setLoading(null);
