@@ -767,6 +767,8 @@
                 { prop: 'P14440', url: 'https://www.primevideo.com/detail/{id}' },
                 { prop: 'P8055', url: 'https://www.amazon.com/gp/video/detail/{id}' }
             ],
+            // Confirmed on the SP-LSP7T (Tizen 5.5), 2026-10-29: {"values":"<ASIN>"} (P8055, B0...) opens
+            // the title, so the widely-populated ASIN property is enough; gti ids (P14440) also expected to work.
             payloads: ['{"values":"{id}"}', '{id}', { payload: '{"values":"{id}"}', op: EDEN }],
             test: { title: '12 Years a Slave', id: 'amzn1.dv.gti.ff2a6d91-ad00-4db8-9cfa-f3a70993476a' },
             tests: [{ title: 'The Boys (ASIN)', id: 'B07QQQ52B3', prop: 'P8055' }]
@@ -796,6 +798,8 @@
             // Variant 1 (Samsung preview form) was ignored on the SP-LSP7T (2026-10-29): app opened, no title.
             // 4-5 follow Hulu's Roku/DIAL form (contentId + mediaType); 6 is the eden_resume route that
             // works for Prime on Tizen 9. mediaType=series fits P6467; movies would need mediaType=movie.
+            // None of these opened a title on the SP-LSP7T (user-tested 2026-10-29): Hulu's real
+            // action_data format is private to its Smart Hub preview. Kept for future testing only.
             payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}',
                 '{"values":"contentId={id}&mediaType=series"}', 'contentId={id}&mediaType=series',
                 { payload: '{"values":"{url}"}', op: EDEN }],

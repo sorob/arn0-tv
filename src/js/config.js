@@ -121,7 +121,7 @@ window.LAUNCHER_CONFIG = {
         prime: null,
         disney: null,
         hbo: null,
-        hulu: null,
+        hulu: false,       // no working deep-link format found: open Hulu's home directly
         apple: null,
         peacock: null,
         plex: null
