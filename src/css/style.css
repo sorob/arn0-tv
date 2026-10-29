@@ -1176,6 +1176,11 @@ html.preview, html.preview body {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
+.show-badge.list {
+    background: #3b82f6;
+    color: #fff;
+}
+
 .show-badge.new {
     color: #fff;
     background: #e5484d;

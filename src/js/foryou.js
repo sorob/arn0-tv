@@ -46,7 +46,7 @@
     function blank() {
         return { liked: [], disliked: [], watched: [], opens: {}, asks: [], query: '', recent: null,
             items: [], fetchedAt: 0, ratedSince: 0, error: '',
-            history: [], likedItems: [], airing: {} };
+            history: [], likedItems: [], airing: {}, watchlist: [] };
     }
 
     var profiles = (cfg.profiles && cfg.profiles.length) ? cfg.profiles : [{ id: 'everyone', name: 'Everyone' }];
@@ -153,6 +153,37 @@
         save();
     }
 
+    // ---------- My List (per profile): titles saved to watch later, newest first
+
+    var MAX_WATCHLIST = 60;
+    var MAX_WATCHLIST_ON_ROW = 8;
+
+    function inList(show) {
+        var k = key(show);
+        return taste.watchlist.some(function (w) { return key(w) === k; });
+    }
+
+    function removeFromList(show) {
+        var k = key(show);
+        taste.watchlist = taste.watchlist.filter(function (w) { return key(w) !== k; });
+    }
+
+    function toggleList(show) {
+        if (inList(show)) {
+            removeFromList(show);
+            log('My List: removed ' + show.title);
+        } else {
+            var entry = brief(show);
+            ['details', 'trailer', 'links'].forEach(function (f) { if (show[f] !== undefined) entry[f] = show[f]; });
+            entry.addedAt = Date.now();
+            taste.watchlist.unshift(entry);
+            if (taste.watchlist.length > MAX_WATCHLIST) taste.watchlist.length = MAX_WATCHLIST;
+            log('My List: added ' + show.title);
+        }
+        save();
+        onChange();
+    }
+
     function noteAppOpen(item) {
         if (!item || !item.label) return;
         taste.opens[item.label] = (taste.opens[item.label] || 0) + 1;
@@ -167,6 +198,7 @@
         }
         if (how === 'disliked') push(taste.disliked, item);
         if (how === 'watched') push(taste.watched, item);
+        if (how === 'disliked' || how === 'watched') removeFromList(item);
         if (how === 'disliked' || how === 'watched') {
             taste.items = taste.items.filter(function (i) { return key(i) !== key(item); });
         } else {
@@ -214,6 +246,8 @@
                     'Loved: ' + (taste.liked.join('; ') || 'none yet') + '\n' +
                     'Not for us: ' + (taste.disliked.join('; ') || 'none') + '\n' +
                     'Already watched: ' + (taste.watched.join('; ') || 'none') + '\n' +
+                    'On their watch list (never suggest these; they hint at taste): ' +
+                        (taste.watchlist.map(key).join('; ') || 'none') + '\n' +
                     'Most-opened apps: ' + (opens.join(', ') || 'unknown') + '\n' +
                     'Earlier requests (hints at taste): ' + (taste.asks.join('; ') || 'none') + '\n' +
                     (recent && recent.length ? 'Popular recent releases on their apps: ' + recent.join('; ') + '\n' : '') +
@@ -264,7 +298,7 @@
             return request(prompt(query, recent));
         }).then(enrichAll).then(function (items) {
             var seen = {};
-            taste.liked.concat(taste.disliked, taste.watched).forEach(function (k) { seen[k] = true; });
+            taste.liked.concat(taste.disliked, taste.watched, taste.watchlist.map(key)).forEach(function (k) { seen[k] = true; });
             taste.items = items.filter(function (i) { return i && i.title && !seen[key(i)]; });
             taste.fetchedAt = Date.now();
             taste.ratedSince = 0;
@@ -586,7 +620,7 @@
             tile.classList.add('badged');
             var pills = el('div', 'show-badges');
             extra.badges.forEach(function (b) {
-                pills.appendChild(el('div', 'show-badge' + (b === 'Continue' ? '' : ' new'), b));
+                pills.appendChild(el('div', 'show-badge' + (b === 'Continue' ? '' : b === 'My List' ? ' list' : ' new'), b));
             });
             tile.appendChild(pills);
         }
@@ -690,6 +724,17 @@
             shown[key(c.show)] = true;
             c.note = c.show.openedAt ? openedAgo(c.show.openedAt) : 'You loved it';
             row.appendChild(card(c.show, c));
+        });
+        var listed = 0;
+        taste.watchlist.forEach(function (w) {
+            var k = key(w);
+            if (shown[k] || listed >= MAX_WATCHLIST_ON_ROW || taste.watched.indexOf(k) !== -1) return;
+            shown[k] = true;
+            listed++;
+            var badges = ['My List'];
+            var a = taste.airing[k];
+            if (a && a.badge) badges.push(a.badge);
+            row.appendChild(card(w, { badges: badges, note: w.reason || 'On your list', resume: !!w.openedAt }));
         });
         taste.items.forEach(function (item) { if (!shown[key(item)]) row.appendChild(card(item)); });
         if (fetching && !taste.items.length) row.appendChild(noteCard('Finding something to watch…'));
@@ -1024,9 +1069,15 @@
         var show = item.show;
         var list = [];
         if (item.app) list.push({ label: (item.resume ? 'Resume in ' : 'Open in ') + item.app.label, primary: true, run: function () { closeDetails(); openTitle(item, launch); } });
+        var listAt = list.length;
+        list.push({ label: inList(show) ? '✓  In My List' : '+  My List', run: function () {
+            toggleList(show);
+            renderButtons(item, launch, listAt);
+        } });
+        var loveAt = list.length;
         list.push({ label: show.liked ? '♥  Loved' : '♥  Love it', run: function () {
             rate(show, 'liked');
-            renderButtons(item, launch, 1);
+            renderButtons(item, launch, loveAt);
         } });
         list.push({ label: '✕  Not for us', run: function () { closeDetails(); rate(show, 'disliked'); } });
         list.push({ label: '✓  Already watched', run: function () { closeDetails(); rate(show, 'watched'); } });
@@ -1154,6 +1205,7 @@
     function prefetchTrailers() {
         if (!cfg.tmdbKey || cfg.previews === false) return;
         resumeCards().forEach(function (c) { trailerKey(c.show); });
+        taste.watchlist.slice(0, MAX_WATCHLIST_ON_ROW).forEach(function (w) { trailerKey(w); });
         taste.items.forEach(function (item) { trailerKey(item); });
     }
 
