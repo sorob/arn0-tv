@@ -750,9 +750,10 @@
             ids: [{ prop: 'P1874', url: 'https://www.netflix.com/title/{id}' }],     // 80057281
             // Netflix's DIAL/launch handler reads m=<title URL>; source_type=4 marks a DIAL-style
             // launch. "title" opens the details page, "watch" starts playback.
+            // Confirmed on the SP-LSP7T (Tizen 5.5), 2026-10-29: 'm={id}&source_type=4' opens the title.
             payloads: [
-                'm=https://www.netflix.com/title/{id}&source_type=4',
                 'm={id}&source_type=4',
+                'm=https://www.netflix.com/title/{id}&source_type=4',
                 'm=https://www.netflix.com/watch/{id}&source_type=4',
                 { payload: 'm=https://www.netflix.com/title/{id}&source_type=4', op: EDEN }
             ],

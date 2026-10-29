@@ -711,11 +711,17 @@ h1, h2 {
 
 /* ---------- Lab ---------- */
 
-.lab-list {
+/* Fixed-height window; ui.js ensureVisible scrolls the .vtrack inside it to the focused entry. */
+.lab-port {
     position: absolute;
     top: 220px;
+    bottom: 120px;
     left: var(--edge);
     width: 860px;
+    overflow: hidden;
+}
+
+.lab-list {
     margin: 0;
     padding: 0;
     list-style: none;
