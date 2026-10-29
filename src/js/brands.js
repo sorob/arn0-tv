@@ -17,11 +17,15 @@ window.BRANDS = [
     { key: 'plex', match: /plex/i, mark: 'plex', bg: '#1f1f1f', fg: '#e5a00d' },
     { key: 'twitch', match: /twitch/i, mark: 'twitch', bg: '#9146ff', fg: '#fff' },
     { key: 'tf1', match: /tf1/i, text: 'TF1+', bg: 'linear-gradient(135deg,#071a4d,#1d4ed8)', fg: '#fff' },
+    { key: 'hulu', match: /hulu/i, text: 'hulu', bg: '#0b0c0f', fg: '#1ce783' },
+    { key: 'peacock', match: /peacock/i, text: 'peacock', bg: '#000', fg: '#fff' },
+    { key: 'tvplus', match: /tv ?plus|tvplus/i, text: 'TV Plus', bg: 'linear-gradient(135deg,#1428a0,#3b5bdb)', fg: '#fff' },
     { key: 'crunchyroll', match: /crunchyroll/i, mark: 'crunchyroll', bg: '#f47521', fg: '#fff' },
 
     // Consoles (used by inputs in config.js)
     { key: 'playstation', mark: 'playstation', bg: 'linear-gradient(135deg,#00205c,#0070d1)', fg: '#fff' },
     { key: 'xbox', mark: 'xbox', bg: 'linear-gradient(135deg,#0a3a0a,#16a016)', fg: '#fff' },
+    { key: 'pc', text: 'PC', bg: 'linear-gradient(135deg,#0a2a5c,#0078d4)', fg: '#fff' },
     { key: 'switch', mark: 'nintendoswitch', bg: 'linear-gradient(135deg,#b3000e,#ff2a2a)', fg: '#fff' }
 ];
 

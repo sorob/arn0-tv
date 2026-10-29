@@ -688,7 +688,8 @@ h1, h2 {
     font-weight: 700;
 }
 
-#rename-input {
+#rename-input,
+#ask-input {
     width: 100%;
     box-sizing: border-box;
     padding: 18px 24px;
@@ -1018,4 +1019,223 @@ html.preview, html.preview body {
     background: #000;
     opacity: 0;
     transition: opacity 10000ms linear;
+}
+
+/* ---------- For you (js/foryou.js) ---------- */
+
+/* With the extra row, Home tightens up: smaller clock, three shelves, shorter input tiles. */
+#home.with-foryou .clock { top: 40px; }
+#home.with-foryou #time { font-size: 92px; }
+#home.with-foryou #date { margin-top: 8px; font-size: 28px; }
+#home.with-foryou #apps-section { top: 205px; }
+#home.with-foryou #foryou-section { top: 488px; }
+#home.with-foryou #inputs-section { top: 771px; }
+#home.with-foryou .shelf h2 { margin-bottom: 18px; font-size: 22px; }
+#home.with-foryou .input .tile { height: 120px; }
+
+.show-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 0 26px 22px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.show-art {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+}
+
+.show-shade {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.35) 55%, rgba(0, 0, 0, 0) 100%);
+}
+
+.show-title,
+.show-meta {
+    position: relative;
+}
+
+.show-title {
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.5px;
+    color: #fff;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.show-meta {
+    margin-top: 8px;
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.app.show .label {
+    font-size: 22px;
+}
+
+.ask-tile {
+    background: linear-gradient(135deg, #3a1c71, #d76d77 60%, #ffaf7b);
+}
+
+.ask-icon {
+    position: absolute;
+    top: 22px;
+    left: 26px;
+    width: 44px;
+    height: 44px;
+}
+
+.ask-box {
+    width: 1100px;
+}
+
+.ask-hint {
+    margin-top: 18px;
+    font-size: 24px;
+    color: var(--muted);
+}
+
+#ask-input::placeholder {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.ask-box {
+    left: 410px;
+}
+
+/* ---------- For you preview (trailer or artwork behind Home) ---------- */
+
+#preview {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+}
+
+#preview.visible { opacity: 1; }
+
+.preview-art,
+.preview-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+}
+
+/* Laid out larger than the screen and panned with translate only (scale steps on this engine). */
+.preview-art {
+    width: 2160px;
+    height: 1215px;
+    background: center / cover no-repeat;
+    transform: translate(0, 0);
+}
+
+#preview.visible .preview-art {
+    transform: translate(-240px, -135px);
+    transition: transform 20s linear;
+}
+
+.preview-video {
+    opacity: 0;
+    transition: opacity 0.8s ease;
+}
+
+#preview.playing .preview-video { opacity: 1; }
+
+.preview-video { overflow: hidden; }
+
+/* Taller than the screen: the video stays 1920x1080 in the middle, and YouTube's title bar
+   and controls land in the letterbox above and below, off screen. */
+.preview-video iframe {
+    position: absolute;
+    top: -160px;
+    left: 0;
+    width: 1920px;
+    height: 1400px;
+    border: 0;
+    pointer-events: none;
+}
+
+/* Keeps the clock and the rows readable over the picture. */
+.preview-shade {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    background:
+        linear-gradient(to bottom, rgba(10, 11, 15, 0.55) 0%, rgba(10, 11, 15, 0.15) 30%, rgba(10, 11, 15, 0.75) 62%, rgba(10, 11, 15, 0.95) 100%),
+        linear-gradient(to right, rgba(10, 11, 15, 0.5) 0%, rgba(10, 11, 15, 0) 50%);
+}
+
+/*
+ * Focus mode while a For you card previews: the row slides to the bottom, everything else
+ * shrinks back and nearly disappears, and comes back as soon as focus leaves the row.
+ * Only transform and opacity change, so the compositor does the work.
+ */
+#home .clock,
+#home .gear,
+#home .shelf,
+.hints {
+    transition: transform 0.32s ease-out, opacity 0.32s ease-out;
+}
+
+.previewing #home .clock,
+.previewing #home .gear {
+    opacity: 0.1;
+    transform: translateY(-24px) scale(0.9);
+}
+
+.previewing #home #apps-section {
+    opacity: 0.05;
+    transform: translateY(-40px) scale(0.92);
+}
+
+.previewing #home #inputs-section {
+    opacity: 0;
+    transform: translateY(120px) scale(0.92);
+}
+
+.previewing #home.with-foryou #foryou-section {
+    transform: translateY(282px);
+}
+
+.previewing .hints {
+    opacity: 0;
+}
+
+/* The bottom of the shade carries the row; the top stays open for the trailer. */
+.previewing .preview-shade {
+    background:
+        linear-gradient(to bottom, rgba(10, 11, 15, 0) 0%, rgba(10, 11, 15, 0) 55%, rgba(10, 11, 15, 0.7) 78%, rgba(10, 11, 15, 0.92) 100%),
+        linear-gradient(to right, rgba(10, 11, 15, 0.35) 0%, rgba(10, 11, 15, 0) 40%);
+}
+
+/* Once the trailer covers the artwork, stop panning it. */
+#preview.playing .preview-art {
+    visibility: hidden;
+    transition: none;
 }

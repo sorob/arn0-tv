@@ -13,20 +13,39 @@
  */
 window.LAUNCHER_CONFIG = {
     apps: [
-        { id: 'xvvl3S1TT1.TizenTubeStandalone', label: 'YouTube', brand: 'youtube' },
-        { id: 'rJeHak5zRg.Spotify', label: 'Spotify' },
-        { id: 'Jz7aUrV2Q4.Twitch', label: 'Twitch' },
-        { id: 'E0P3lRI4H7.MYTF1', label: 'TF1+' },
         { id: 'org.tizen.netflix-app', label: 'Netflix' },
+        { id: '9Ur5IzDKqV.TizenYouTube', label: 'YouTube', brand: 'youtube' },
         { id: 'org.tizen.primevideo', label: 'Prime Video' },
         { id: 'MCmYXNxgcu.DisneyPlus', label: 'Disney+' },
-        { id: 'com.samsung.tv.aria-video', label: 'Apple TV' }
+        { id: 'cj37Ni3qXM.HBONow', label: 'HBO Max', brand: 'max' },
+        { id: 'LBUAQX1exg.Hulu', label: 'Hulu', brand: 'hulu' },
+        { id: 'com.samsung.tv.aria-video', label: 'Apple TV' },
+        { id: 'gzcc4LRFBF.Peacock', label: 'Peacock', brand: 'peacock' },
+        { id: 'kIciSQlYEM.plex', label: 'Plex' },
+        { id: 'rJeHak5zRg.Spotify', label: 'Spotify' },
+        { id: 'com.samsung.tv.tvPlusDeeplinker', label: 'Samsung TV Plus', brand: 'tvplus' }
     ],
 
+    /*
+     * "For you" row (js/foryou.js): AI suggestions from OpenAI. Put the key in
+     * js/config.local.js as ai: { apiKey: 'sk-...', tmdbKey: '...' } so it never lands in git. No key, no row.
+     */
+    ai: {
+        enabled: true,
+        apiKey: null,
+        model: 'gpt-5.4-mini',
+        region: 'US',
+        tmdbKey: null,          // themoviedb.org v3 API key, for artwork and where-to-watch
+        count: 14,
+        refreshHours: 6,
+        previews: true,         // trailer/artwork behind Home while a For you card is highlighted
+        trailerSound: true,     // trailers with sound (needs trailerRelay); falls back to muted if blocked
+        trailerVolume: 50,      // 0-100, relative to the projector's own volume
+        trailerRelay: null      // URL of trailer-host/index.html on a web server; without it YouTube refuses (153)
+    },
+
     inputs: [
-        { hdmi: 1, label: 'Nintendo Switch 2', brand: 'switch' },
-        { hdmi: 2, label: 'PlayStation 5', brand: 'playstation' },
-        { hdmi: 4, label: 'Xbox Series X', brand: 'xbox' }
+        { hdmi: 1, label: 'Windows PC', brand: 'pc' }
     ],
 
     // How an input tile switches the TV. See README "HDMI inputs".
@@ -35,7 +54,7 @@ window.LAUNCHER_CONFIG = {
     //   'inapp'          show the input full screen inside the launcher (Back returns)
     inputMethod: 'switch+viewer',
 
-    locale: 'en-GB',
+    locale: 'en-US',
 
     theme: {
         // Starting wallpaper (key from js/wallpapers.js), or null for none (plain gradient).
@@ -55,7 +74,7 @@ window.LAUNCHER_CONFIG = {
     weather: {
         latitude: null,
         longitude: null,
-        unit: 'celsius'         // 'celsius' | 'fahrenheit'
+        unit: 'fahrenheit'      // 'celsius' | 'fahrenheit'
     },
 
     /*

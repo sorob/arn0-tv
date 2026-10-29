@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Trailer</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+</head>
+<body>
+<!--
+  Trailer relay for the Arn0 launcher. YouTube refuses embeds without a referrer (error 153),
+  and a packaged Tizen app has none, so the launcher iframes this page, which embeds the player
+  from a real web origin. It relays the player's state messages up to the launcher.
+-->
+<script>
+(function () {
+    var v = (location.search.match(/[?&]v=([\w-]{6,20})/) || [])[1];
+    if (!v) return;
+    // ?sound=1 plays with sound at ?vol= (0-100); if the TV blocks autoplay with sound,
+    // the player is reloaded muted after a few seconds so the preview still runs.
+    var sound = /[?&]sound=1/.test(location.search);
+    var vol = Math.max(0, Math.min(100, Number((location.search.match(/[?&]vol=(\d+)/) || [])[1]) || 50));
+    var playing = false;
+    var f = document.createElement('iframe');
+    f.allow = 'autoplay; encrypted-media';
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    function src(muted) {
+        return 'https://www.youtube.com/embed/' + v + '?autoplay=1&mute=' + (muted ? 1 : 0) + '&controls=0&disablekb=1&fs=0' +
+        '&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&loop=1&playlist=' + v +
+        '&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+    }
+    function command(func, args) {
+        f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*');
+    }
+    f.src = src(!sound);
+    f.onload = function () {
+        f.contentWindow.postMessage('{"event":"listening","id":1}', '*');
+        if (sound) command('setVolume', [vol]);
+    };
+    if (sound) {
+        setTimeout(function () {
+            if (!playing) f.src = src(true);   // autoplay with sound refused: fall back to muted
+        }, 4000);
+    }
+    document.body.appendChild(f);
+    window.addEventListener('message', function (e) {
+        // From the launcher: switch video in the already-loaded player, or stop.
+        if (e.source === window.parent && e.data && e.data.arn0) {
+            if (e.data.arn0 === 'load' && /^[\w-]{6,20}$/.test(e.data.v)) {
+                playing = false;
+                command('loadVideoById', [e.data.v]);
+                if (sound) { command('unMute'); command('setVolume', [vol]); }
+            } else if (e.data.arn0 === 'stop') {
+                command('stopVideo');
+            }
+            return;
+        }
+        if (e.source !== f.contentWindow) return;
+        try {
+            var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            if ((d.event === 'onStateChange' && d.info === 1) || (d.info && d.info.playerState === 1)) playing = true;
+        } catch (err) {}
+        if (window.parent !== window) window.parent.postMessage(e.data, '*');
+    });
+})();
+</script>
+</body>
+</html>

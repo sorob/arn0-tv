@@ -22,6 +22,14 @@
     <!-- Lets the TV start the app in the background at power-on so opening it is faster -->
     <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true"/>
 
+    <!-- Experimental: returns to the launcher when an app exits to Samsung Home (service/watcher.js) -->
+    <tizen:service id="Arn0Lnchr0.Watcher" auto-restart="true" on-boot="false">
+        <tizen:content src="service/watcher.js"/>
+        <tizen:name>Arn0 Watcher</tizen:name>
+        <tizen:icon src="icon.png"/>
+        <tizen:description>Returns to Arn0 Launcher after an app exits</tizen:description>
+    </tizen:service>
+
     <tizen:profile name="tv-samsung"/>
     <tizen:setting screen-orientation="landscape" context-menu="disable"
                    background-support="disable" encryption="disable"

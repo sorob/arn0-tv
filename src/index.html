@@ -25,6 +25,10 @@
                 <h2>Apps</h2>
                 <div class="row-viewport"><div id="apps-row" class="row-track"></div></div>
             </div>
+            <div id="foryou-section" class="shelf hidden">
+                <h2 id="foryou-title">For you</h2>
+                <div class="row-viewport"><div id="foryou-row" class="row-track"></div></div>
+            </div>
             <div id="inputs-section" class="shelf">
                 <h2>Consoles</h2>
                 <div class="row-viewport"><div id="inputs-row" class="row-track"></div></div>
@@ -145,6 +149,15 @@
             </div>
         </div>
 
+        <div id="ask" class="view overlay hidden">
+            <div class="menu-box ask-box">
+                <div class="dialog-title">What are you in the mood for?</div>
+                <input id="ask-input" type="text" maxlength="200" autocomplete="off" spellcheck="false"
+                       placeholder="e.g. something funny under 90 minutes">
+                <div class="ask-hint">Type with the remote, or dictate from the SmartThings app on your phone. OK to ask.</div>
+            </div>
+        </div>
+
         <div id="menu" class="view overlay hidden">
             <div class="menu-box">
                 <div id="menu-title"></div>
@@ -178,6 +191,7 @@
     <script src="js/platform-probe.js"></script>
     <script src="js/screensaver.js"></script>
     <script src="js/home.js"></script>
+    <script src="js/foryou.js"></script>
     <script src="js/settings.js"></script>
     <script src="js/runner-game.js"></script>
     <script src="js/boot.js"></script>

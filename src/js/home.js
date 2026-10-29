@@ -178,8 +178,15 @@
             if (!input.hidden) row2.appendChild(inputTile(input));
         });
         $('inputs-section').classList.toggle('hidden', !row2.children.length);
+        renderForYou();
         applyInputStatus();
         if (UI.isVisible('home')) UI.refresh();
+    }
+
+    function renderForYou() {
+        var on = window.ForYou ? ForYou.render($('foryou-row')) : false;
+        $('foryou-section').classList.toggle('hidden', !on);
+        document.getElementById('home').classList.toggle('with-foryou', on);
     }
 
     function applyInputStatus() {
@@ -250,6 +257,10 @@
     }
 
     function launchApp(item) {
+        if (window.ForYou) {
+            ForYou.noteAppOpen(item);
+            ForYou.stopPreview();
+        }
         runLogged('Launch ' + item.id, Apps.launch(item.id)).catch(function (err) {
             UI.toast('Could not open ' + item.label + ': ' + DevLog.errorText(err));
         });
@@ -410,13 +421,18 @@
             startRow: 1,
             hints: [['OK', 'Open'], ['▲', 'Settings']],
             rows: function () {
-                return [[$('gear')], UI.children($('apps-row')), UI.children($('inputs-row'))];
+                return [[$('gear')], UI.children($('apps-row')), UI.children($('foryou-row')), UI.children($('inputs-row'))]
+                    .filter(function (r) { return r.length; });
             },
             activate: function (item) {
                 if (item.kind === 'app') launchApp(item);
                 else if (item.kind === 'all') UI.show('all');
                 else if (item.kind === 'input') openInput(item);
                 else if (item.kind === 'settings') UI.show('settings');
+                else if (/^show/.test(item.kind)) ForYou.activate(item, launchApp);
+            },
+            onFocus: function (target) {
+                if (window.ForYou) ForYou.focus(target && target._item);
             },
             // Home is the root: Back does nothing.
             onBack: function () { return true; }
@@ -474,10 +490,18 @@
             refreshInputStatus();
             if (UI.isVisible('home')) Wallpaper.homeShown();
             if (Date.now() - state.lastFetch > REFRESH_AFTER_MS) setTimeout(loadApps, 1500);
+            if (window.ForYou) ForYou.refresh(false);
         });
         // With a cache, let the first frames and key presses through before the slow app list.
         setTimeout(loadApps, cached ? 2000 : 0);
         refreshInputStatus();
+        if (window.ForYou) {
+            ForYou.onChange(function () {
+                renderForYou();
+                if (UI.isVisible('home')) UI.refresh();
+            });
+            setTimeout(function () { ForYou.refresh(false); }, 3000);
+        }
         log('Launcher started');
     }
 
