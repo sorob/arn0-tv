@@ -1239,3 +1239,80 @@ html.preview, html.preview body {
     visibility: hidden;
     transition: none;
 }
+
+/* ---------- Show details (OK on a For you card) ---------- */
+
+.details-open #home {
+    opacity: 0;
+    transition: opacity 0.25s ease-out;
+}
+
+#details {
+    background: linear-gradient(to right, rgba(10, 11, 15, 0.94) 0%, rgba(10, 11, 15, 0.82) 38%, rgba(10, 11, 15, 0.2) 70%, rgba(10, 11, 15, 0) 100%),
+        linear-gradient(to top, rgba(10, 11, 15, 0.7) 0%, rgba(10, 11, 15, 0) 40%);
+}
+
+.details-panel {
+    position: absolute;
+    left: var(--edge);
+    bottom: 150px;
+    width: 900px;
+}
+
+.d-title {
+    font-size: 84px;
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -1.5px;
+}
+
+.d-meta {
+    margin-top: 22px;
+    font-size: 28px;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.d-reason {
+    margin-top: 12px;
+    font-size: 26px;
+    color: var(--muted);
+}
+
+.d-overview {
+    margin: 30px 0 0;
+    font-size: 28px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.86);
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.d-actions {
+    display: flex;
+    margin-top: 42px;
+}
+
+.d-btn {
+    flex: none;
+    margin-right: 20px;
+    padding: 18px 34px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 28px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: transform 0.1s ease-out;
+}
+
+.d-btn.primary {
+    background: rgba(255, 255, 255, 0.24);
+}
+
+.d-btn.focused {
+    background: var(--fg);
+    color: var(--bg);
+    transform: scale(1.05);
+}

@@ -396,15 +396,189 @@
             onChange();
             return;
         }
+        openDetails(item, launch);
+    }
+
+    // ---------- Deep links: open the title itself, not just the app
+    //
+    // Per-service ids come from Wikidata (TMDB external_ids -> wikidata_id -> claims). Only
+    // Netflix is wired so far: Samsung's Netflix app takes "m=<id>&source_type=4" as the app
+    // control PAYLOAD. Anything else, or a refusal, falls back to opening the app.
+
+    var WIKIDATA_IDS = {
+        netflix: ['P1874'],
+        disney: ['P7595', 'P7596'],
+        prime: ['P8055'],
+        hbo: ['P8298'],
+        hulu: ['P6466', 'P6467'],
+        apple: ['P9586', 'P9751']
+    };
+
+    function serviceLinks(item) {
+        if (item.links) return Promise.resolve(item.links);
+        return findTmdb(item).then(function () {
+            if (!item.tmdbId) return {};
+            return tmdb('/' + item.kind + '/' + item.tmdbId + '/external_ids').then(function (ext) {
+                if (!ext.wikidata_id) return {};
+                return new Promise(function (resolve) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('GET', 'https://www.wikidata.org/wiki/Special:EntityData/' + ext.wikidata_id + '.json', true);
+                    xhr.timeout = 10000;
+                    xhr.onload = function () {
+                        var links = {};
+                        try {
+                            var ent = JSON.parse(xhr.responseText).entities;
+                            var claims = ent[Object.keys(ent)[0]].claims || {};
+                            Object.keys(WIKIDATA_IDS).forEach(function (svc) {
+                                WIKIDATA_IDS[svc].forEach(function (p) {
+                                    var c = claims[p] && claims[p][0] && claims[p][0].mainsnak.datavalue;
+                                    if (c && !links[svc]) links[svc] = c.value;
+                                });
+                            });
+                        } catch (e) {}
+                        resolve(links);
+                    };
+                    xhr.onerror = xhr.ontimeout = function () { resolve({}); };
+                    xhr.send();
+                });
+            });
+        }).then(function (links) {
+            item.links = links;
+            save();
+            return links;
+        }).catch(function () { return {}; });
+    }
+
+    function launchWithPayload(appId, payload) {
+        return new Promise(function (resolve, reject) {
+            var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', null, null, null,
+                [new tizen.ApplicationControlData('PAYLOAD', [payload])]);
+            tizen.application.launchAppControl(ctrl, appId, resolve, reject);
+        });
+    }
+
+    function openTitle(item, launch) {
         var show = item.show;
-        var options = [];
-        if (item.app) {
-            options.push({ label: 'Open ' + item.app.label, run: function () { launch(item.app); } });
-        }
-        options.push({ label: show.liked ? '♥  Loved' : '♥  Love it', run: function () { rate(show, 'liked'); } });
-        options.push({ label: '✕  Not for us', run: function () { rate(show, 'disliked'); } });
-        options.push({ label: '✓  Already watched', run: function () { rate(show, 'watched'); } });
-        UI.menu(show.title + (show.year ? ' (' + show.year + ')' : ''), options);
+        serviceLinks(show).then(function (links) {
+            var id = /netflix/i.test(item.app.id + item.app.label) && links.netflix;
+            if (!id || !window.tizen) return launch(item.app);
+            log('Deep link: Netflix ' + id + ' for ' + show.title);
+            noteAppOpen(item.app);
+            stopPreview(true);
+            launchWithPayload(item.app.id, 'm=' + id + '&source_type=4').then(function () {
+                log('Deep link: Netflix accepted');
+            }, function (err) {
+                log('Deep link failed (' + DevLog.errorText(err) + '), opening app');
+                launch(item.app);
+            });
+        });
+    }
+
+    // ---------- Details: description and actions for one card (trailer keeps playing behind)
+
+    var detailsRegistered = false;
+    var detailsItem = null;
+
+    function showDetails(item) {
+        if (!cfg.tmdbKey) return Promise.resolve(null);
+        if (item.details) return Promise.resolve(item.details);
+        return findTmdb(item).then(function () {
+            if (!item.tmdbId) return null;
+            return tmdb('/' + item.kind + '/' + item.tmdbId, { language: 'en-US' }).then(function (d) {
+                item.details = {
+                    overview: d.overview || '',
+                    tagline: d.tagline || '',
+                    genres: (d.genres || []).map(function (g) { return g.name; }).slice(0, 3),
+                    rating: d.vote_average ? Math.round(d.vote_average * 10) / 10 : null,
+                    runtime: d.runtime || (d.episode_run_time && d.episode_run_time[0]) || null,
+                    seasons: d.number_of_seasons || null
+                };
+                save();
+                return item.details;
+            });
+        }).catch(function () { return null; });
+    }
+
+    function metaLine(show, d) {
+        var parts = [show.type === 'movie' ? 'Movie' : 'Series'];
+        if (show.year) parts.push(show.year);
+        if (d && d.seasons) parts.push(d.seasons + (d.seasons === 1 ? ' season' : ' seasons'));
+        else if (d && d.runtime) parts.push(Math.floor(d.runtime / 60) ? Math.floor(d.runtime / 60) + 'h ' + (d.runtime % 60) + 'm' : d.runtime + 'm');
+        if (d && d.genres.length) parts.push(d.genres.join(', '));
+        if (d && d.rating) parts.push('★ ' + d.rating);
+        return parts.join('  ·  ');
+    }
+
+    function fillDetails(item) {
+        var show = item.show;
+        var $ = function (id) { return document.getElementById(id); };
+        $('d-title').textContent = show.title;
+        $('d-meta').textContent = metaLine(show, show.details);
+        $('d-reason').textContent = (show.service ? 'On ' + show.service : '') + (show.reason ? '  ·  ' + show.reason : '');
+        $('d-overview').textContent = show.details ? (show.details.overview || 'No description available.') : 'Loading description…';
+    }
+
+    function detailButtons(item, launch) {
+        var show = item.show;
+        var list = [];
+        if (item.app) list.push({ label: 'Open in ' + item.app.label, primary: true, run: function () { closeDetails(); openTitle(item, launch); } });
+        list.push({ label: show.liked ? '♥  Loved' : '♥  Love it', run: function () {
+            rate(show, 'liked');
+            renderButtons(item, launch, 1);
+        } });
+        list.push({ label: '✕  Not for us', run: function () { closeDetails(); rate(show, 'disliked'); } });
+        list.push({ label: '✓  Already watched', run: function () { closeDetails(); rate(show, 'watched'); } });
+        return list;
+    }
+
+    function renderButtons(item, launch, focusIndex) {
+        var box = document.getElementById('d-actions');
+        box.innerHTML = '';
+        detailButtons(item, launch).forEach(function (b) {
+            var btn = el('div', 'd-btn' + (b.primary ? ' primary' : ''), b.label);
+            btn._item = b;
+            box.appendChild(btn);
+        });
+        if (focusIndex !== undefined) UI.focusOn(box.children[Math.min(focusIndex, box.children.length - 1)]);
+    }
+
+    function openDetails(item, launch) {
+        if (!detailsRegistered) registerDetails();
+        detailsItem = item;
+        fillDetails(item);
+        renderButtons(item, launch);
+        document.documentElement.classList.add('details-open');
+        UI.show('details');
+        showDetails(item.show).then(function () {
+            if (detailsItem === item) fillDetails(item);
+        });
+        serviceLinks(item.show);    // ready by the time Open is pressed
+    }
+
+    function cleanupDetails() {
+        detailsItem = null;
+        document.documentElement.classList.remove('details-open');
+    }
+
+    // UI.back() runs onBack (cleanup), then returns to Home.
+    function closeDetails() {
+        if (UI.isVisible('details')) UI.back();
+        else cleanupDetails();
+    }
+
+    function registerDetails() {
+        detailsRegistered = true;
+        UI.register('details', {
+            el: document.getElementById('details'),
+            overlay: true,
+            hints: [['OK', 'Select'], ['Back', 'Close']],
+            rows: function () { return [UI.children(document.getElementById('d-actions'))]; },
+            activate: function (b) { b.run(); },
+            onBack: function () {
+                cleanupDetails();
+                return false;
+            }
+        });
     }
 
     function reset() {
@@ -534,7 +708,7 @@
                 // Leaving Home (Settings, All apps, an app) ends the preview and frees the player.
                 preview.watch = setInterval(function () {
                     var v = UI.current();
-                    if (document.hidden || (v !== 'home' && v !== 'menu')) stopPreview(true);
+                    if (document.hidden || (v !== 'home' && v !== 'menu' && v !== 'details')) stopPreview(true);
                 }, 500);
             }
         }, PREVIEW_DELAY_MS);
