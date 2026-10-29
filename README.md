@@ -164,8 +164,8 @@ Saved on the TV in `localStorage`. They survive restarts and in-place updates, n
   font, app names (always / when selected / never).
 - **Navigation sound** — turn arrow-key sounds on or off, choose Soft, Warm or Bright, and preview
   the selected tone.
-- **Screen saver** — on or off, start after 3/5/10/15 min idle on Home, photo change every
-  60/75/90 s while Background is on Rotate, go dark after 30 min / 1 hour / 2 hours / never, and
+- **Screen saver** — on or off, start after 3/5/10/15 min idle on Home, show For you Shows or
+  Wallpapers, photo change every 60/75/90 s (Shows, or Wallpapers while Background is on Rotate), go dark after 30 min / 1 hour / 2 hours / never, and
   show it now.
 - **Samsung Home** — opens `com.samsung.tv.csfs`, from which TV settings are one press away.
   Opening `com.samsung.tv.coba.setting` directly does not work on this TV. Keep this entry: it is
@@ -182,9 +182,16 @@ Green.
 
 ### Screen saver
 
-After a few minutes with no input on Home it shows the wallpapers full screen with the clock, the
-weather and the photo's name in the corners. Any button closes it, and that press does nothing else. It never
-appears over a console input, another screen or the hidden game.
+After a few minutes with no input on Home it shows pictures full screen with the clock, the
+weather and a caption in the corners. Any button closes it, and that press does nothing else — OK
+included, it never opens a show. It never appears over a console input, another screen or the hidden game.
+
+**Shows** (the default) cycles the For you picks — liked ones first, then the current suggestions —
+using each one's TMDB backdrop at w1280, with the title, a "Series · 2025 · On Netflix" line and the
+AI's reason bottom-left. The next backdrop is downloaded and decoded before the crossfade starts, so
+there is never a blank frame; one that will not load is skipped. With no picks that have a picture
+(no API key, nothing fetched yet) it shows the **Wallpapers** instead, which is the other choice in
+Settings ▸ Screen saver.
 
 The weather is off until you put coordinates in `config.local.js` (see **What you can change**). It comes from
 [Open-Meteo](https://open-meteo.com/), which needs no API key, and there is deliberately no

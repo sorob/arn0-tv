@@ -485,6 +485,14 @@ h1, h2 {
     margin-bottom: 14px;
 }
 
+/* A remark on a setting's heading line; the page does not scroll, so it takes no row. */
+.setting-note {
+    margin-left: 24px;
+    font-size: 22px;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
 .setting-block h2,
 .ed-col h2 {
     margin-bottom: 22px;
@@ -927,6 +935,52 @@ html.preview, html.preview body {
     left: var(--edge);
     bottom: 96px;
     transition: transform 1200ms ease-out;
+}
+
+/*
+ * Shows mode: a taller, darker scrim (still static, painted once) so a bright backdrop cannot
+ * wash out the title, and the title block itself. Its fade is opacity only.
+ */
+#screensaver.shows .ss-scrim {
+    height: 560px;
+    background: linear-gradient(180deg, rgba(3, 4, 7, 0), rgba(3, 4, 7, 0.8));
+}
+
+.ss-show {
+    max-width: 980px;
+    opacity: 1;
+    transition: opacity 900ms linear;
+}
+
+.ss-show-title {
+    font-size: 76px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: rgba(243, 244, 246, 0.95);
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.ss-show-meta {
+    margin-top: 16px;
+    font-size: 30px;
+    font-weight: 500;
+    color: rgba(220, 224, 232, 0.85);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ss-show-reason {
+    margin-top: 10px;
+    font-size: 26px;
+    color: rgba(220, 224, 232, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .ss-title {

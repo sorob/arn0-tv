@@ -26,6 +26,7 @@
                 enabled: true,
                 delay: '5m',            // see Screensaver.DELAYS
                 photoEvery: '75s',      // see Screensaver.PHOTO_EVERY
+                source: 'shows',        // 'shows' | 'wallpapers', see Screensaver.SOURCES
                 dark: '1h'              // see Screensaver.DARK_AFTER
             },
             appearance: {

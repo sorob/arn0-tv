@@ -1,6 +1,11 @@
 /*
- * Screen saver: photos with a slow zoom, a clock and a caption, after a stretch with no input
- * on Home. Any key closes it, and that press does nothing else.
+ * Screen saver: photos with a slow pan, a clock and a caption, after a stretch with no input
+ * on Home. Any key closes it, and that press does nothing else — OK included: it never opens
+ * the show on screen.
+ *
+ * The photos are either the Home wallpapers or, in Shows mode (the default), the backdrops of
+ * the For you picks, liked ones first, with the title, a meta line and the AI's reason in the
+ * bottom-left corner. Shows mode falls back to the wallpapers when no pick has a backdrop.
  *
  * Adapted from a design mockup rather than ported from it. The mockup's backdrop was nine
  * radial-gradients over a linear-gradient — the exact shape the Lab render probe measured at
@@ -31,6 +36,12 @@
         { key: '60s', label: '60 s', ms: 60 * 1000 },
         { key: '75s', label: '75 s', ms: 75 * 1000 },
         { key: '90s', label: '90 s', ms: 90 * 1000 }
+    ];
+
+    // What fills the screen: the For you picks' backdrops, or the Home wallpapers.
+    var SOURCES = [
+        { key: 'shows', label: 'Shows' },
+        { key: 'wallpapers', label: 'Wallpapers' }
     ];
 
     var DARK_AFTER = [
@@ -74,6 +85,9 @@
     var lastClockText = '';
     var clockPos = 0;
     var dark = false;
+    var shows = [];             // For you picks with a backdrop, snapshotted on open; empty = wallpapers
+    var showFailures = 0;       // backdrops in a row that would not load
+    var textTimer = 0;
 
     function prefs() { return Prefs.get().screensaver; }
 
@@ -85,10 +99,42 @@
     function delay() { return option(DELAYS, prefs().delay, '5m'); }
     function photoEvery() { return option(PHOTO_EVERY, prefs().photoEvery, '75s'); }
     function darkAfter() { return option(DARK_AFTER, prefs().dark, '1h'); }
+    function source() { return option(SOURCES, prefs().source, 'shows'); }
+
+    /*
+     * Shows mode wants For you picks with a backdrop; with none (no API key, nothing fetched yet,
+     * TMDB had no art) it quietly falls back to the wallpapers.
+     */
+    function ambientShows() {
+        if (source().key !== 'shows') return [];
+        try {
+            return (window.ForYou && ForYou.ambientItems) ? ForYou.ambientItems() : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function showsMode() { return shows.length > 0; }
+
+    // The cards use w780; full screen wants the larger rendition of the same backdrop.
+    function bigImage(url) { return String(url).replace('/w780/', '/w1280/'); }
+
+    function showAt(i) {
+        var item = shows[((i % shows.length) + shows.length) % shows.length];
+        return { file: bigImage(item.image), show: item };
+    }
+
+    function showMeta(item) {
+        var parts = [item.type === 'movie' ? 'Movie' : 'Series'];
+        if (item.year) parts.push(String(item.year));
+        if (item.service) parts.push('On ' + item.service);
+        return parts.join(' \u00b7 ');
+    }
 
     // ---------- Photos
 
     function rotating() {
+        if (showsMode()) return shows.length > 1;
         return Prefs.get().wallpaper.mode === 'rotate' && Wallpaper.list().length > 1;
     }
 
@@ -98,6 +144,7 @@
      * the Home wallpaper or restart its rotation clock, so Prefs.wallpaper is read, never written.
      */
     function photoAt(i) {
+        if (showsMode()) return showAt(i);
         var p = Prefs.get().wallpaper;
         if (p.mode === 'off') return null;
         var list = Wallpaper.list();
@@ -108,6 +155,7 @@
 
     // Continue from whatever is already on Home, so opening the screen saver is not a jump cut.
     function startIndex() {
+        if (showsMode()) return 0;     // liked picks come first
         var key = Prefs.get().wallpaper.photo;
         var i = Wallpaper.list().findIndex(function (w) { return w.key === key; });
         return i < 0 ? 0 : i;
@@ -156,6 +204,7 @@
     function showPhoto(w) {
         var token = ++photoToken;
         if (!w) {
+            caption(null);
             layers[0].style.opacity = '0';
             layers[1].style.opacity = '0';
             nextPanAt = 0;
@@ -176,12 +225,40 @@
             startPan();
             back.style.opacity = '1';
             old.style.opacity = '0';
+            // The words change with the picture they describe, not when its download began.
+            caption(w);
+            if (w.show) {
+                showFailures = 0;
+                prefetch(photoAt(photoIndex + 1));
+            }
         };
         var img = new Image();
         img.onload = swap;
-        img.onerror = function () { DevLog.log('Screen saver photo failed: ' + w.file); };
+        img.onerror = function () {
+            DevLog.log('Screen saver photo failed: ' + w.file);
+            if (!w.show || token !== photoToken || !open) return;
+            // A backdrop that will not load is skipped; if none will, the wallpapers take over.
+            showFailures++;
+            if (showFailures >= shows.length) {
+                shows = [];
+                $('screensaver').classList.remove('shows');
+                photoIndex = startIndex();
+                DevLog.log('Screen saver: no show backdrop loaded, using wallpapers');
+            } else {
+                photoIndex++;
+            }
+            nextPhotoAt = Date.now() + photoEvery().ms;
+            showPhoto(photoAt(photoIndex));
+        };
         img.src = w.file;
         if (img.complete && img.naturalWidth) swap();
+    }
+
+    // Warms the cache for the next backdrop, so its crossfade starts on time.
+    function prefetch(w) {
+        if (!w || !rotating()) return;
+        var img = new Image();
+        img.src = w.file;
     }
 
     // ---------- Text
@@ -210,8 +287,29 @@
     }
 
     function caption(w) {
-        $('ss-title').textContent = w ? w.title : '';
+        var item = w && w.show;
         $('ss-caption').classList.toggle('hidden', !w);
+        $('ss-title').classList.toggle('hidden', !!item);
+        $('ss-show').classList.toggle('hidden', !item);
+        if (!item) {
+            $('ss-title').textContent = w ? w.title : '';
+            return;
+        }
+        // The old title fades out while the photos crossfade, and the new one fades in after.
+        var box = $('ss-show');
+        clearTimeout(textTimer);
+        var fill = function () {
+            $('ss-show-title').textContent = item.title;
+            $('ss-show-meta').textContent = showMeta(item);
+            $('ss-show-reason').textContent = item.reason || '';
+            box.style.opacity = '1';
+        };
+        if (!$('ss-show-title').textContent) {
+            fill();
+            return;
+        }
+        box.style.opacity = '0';
+        textTimer = setTimeout(function () { if (open) fill(); }, FADE_MS / 2);
     }
 
     // A few pixels on each photo change, so even the text that stays put does not stay put.
@@ -256,11 +354,17 @@
         front = 0;
         nudge = 0;
         clockPos = 0;
-        photoIndex = startIndex();
         panSign = 1;
         lastClockText = '';
+        shows = ambientShows();
+        showFailures = 0;
+        $('screensaver').classList.toggle('shows', showsMode());
+        $('ss-show-title').textContent = '';
+        $('ss-title').textContent = '';
+        $('ss-show').style.opacity = '1';
         layers[0].style.opacity = '0';
         layers[1].style.opacity = '0';
+        photoIndex = startIndex();
         resetPan(layers[0], panSign);
         resetPan(layers[1], panSign);
         $('ss-dark').style.opacity = '0';
@@ -280,9 +384,8 @@
         renderWeather();
         if (window.Weather) Weather.refresh();
         var w = photoAt(photoIndex);
-        caption(w);
         showPhoto(w);
-        DevLog.log('Screen saver on');
+        DevLog.log('Screen saver on' + (showsMode() ? ' (' + shows.length + ' shows)' : ''));
     }
 
     function goDark() {
@@ -303,7 +406,6 @@
             photoIndex++;
             nextPhotoAt = now + photoEvery().ms;
             var w = photoAt(photoIndex);
-            caption(w);
             nudgeText();
             showPhoto(w);
         } else if (nextPanAt && now >= nextPanAt) {
@@ -317,6 +419,8 @@
         open = false;
         lastInput = Date.now();
         photoToken++;
+        clearTimeout(textTimer);
+        shows = [];
         // Dropping the images releases two full-screen textures on a 2 GB device.
         layers.forEach(function (l) {
             l.style.opacity = '0';
@@ -376,6 +480,16 @@
         DELAYS: DELAYS,
         PHOTO_EVERY: PHOTO_EVERY,
         DARK_AFTER: DARK_AFTER,
+        SOURCES: SOURCES,
+        source: source,
+        // Whether Shows mode has anything to show right now (settings explains the fallback).
+        hasShows: function () {
+            try {
+                return !!(window.ForYou && ForYou.ambientItems && ForYou.ambientItems().length);
+            } catch (e) {
+                return false;
+            }
+        },
         delay: delay,
         photoEvery: photoEvery,
         darkAfter: darkAfter,
