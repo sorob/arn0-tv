@@ -28,6 +28,13 @@
     var PROMPT_VERSION = 2;     // bump when the prompt changes enough to redo cached suggestions
     var IME_DONE = 65376;       // Samsung on-screen keyboard Done / Cancel
     var IME_CANCEL = 65385;
+    var DAY_MS = 24 * 3600 * 1000;
+    var MAX_HISTORY = 30;       // titles opened from a card (or loved), newest first
+    var CONTINUE_DAYS = 30;     // opened this recently -> "Continue" card
+    var MAX_CONTINUE = 4;
+    var MAX_RESUME = 5;         // Continue + New episodes cards together
+    var AIRING_TTL_MS = DAY_MS; // TMDB /tv/{id} checked at most once a day per show
+    var AIRING_PER_RUN = 10;
 
     var cfg = window.LAUNCHER_CONFIG.ai || {};
     var log = DevLog.log;
@@ -38,7 +45,8 @@
 
     function blank() {
         return { liked: [], disliked: [], watched: [], opens: {}, asks: [], query: '', recent: null,
-            items: [], fetchedAt: 0, ratedSince: 0, error: '' };
+            items: [], fetchedAt: 0, ratedSince: 0, error: '',
+            history: [], likedItems: [], airing: {} };
     }
 
     var profiles = (cfg.profiles && cfg.profiles.length) ? cfg.profiles : [{ id: 'everyone', name: 'Everyone' }];
@@ -60,6 +68,7 @@
 
     var taste = load();
     setTimeout(function () { prefetchTrailers(); }, 4000);   // cards cached from an earlier run
+    setTimeout(function () { checkAiring(); }, 6000);
 
     function load() {
         var t = blank();
@@ -99,6 +108,51 @@
 
     // ---------- Tracking
 
+    var SHOW_FIELDS = ['title', 'year', 'type', 'service', 'tmdbId', 'kind', 'image'];
+
+    function brief(show) {
+        var o = {};
+        SHOW_FIELDS.forEach(function (f) { if (show[f] !== undefined && show[f] !== null) o[f] = show[f]; });
+        return o;
+    }
+
+    /*
+     * History of titles opened from a card (newest first, one entry per title). The entries are
+     * the shows behind "Continue" cards, so they also keep details/trailer/links once looked up.
+     * how: 'opened' (moves to the front) or 'loved'.
+     */
+    function remember(show, how) {
+        if (!show || !show.title) return;
+        var k = key(show);
+        var at = -1;
+        taste.history.forEach(function (h, i) { if (at === -1 && key(h) === k) at = i; });
+        var entry = at === -1 ? null : taste.history[at];
+        var fresh = !entry;
+        entry = entry || {};
+        var info = brief(show);
+        Object.keys(info).forEach(function (f) { entry[f] = info[f]; });
+        if (fresh) ['details', 'trailer', 'links'].forEach(function (f) { if (show[f] !== undefined) entry[f] = show[f]; });
+        if (how === 'opened') entry.openedAt = Date.now();
+        if (!entry.openedAt) entry.openedAt = 0;
+        if (how === 'loved') {
+            entry.loved = true;
+            entry.liked = true;
+        }
+        // Opening moves the title to the front; loving one keeps its place (new ones go first).
+        if (how === 'opened' || fresh) {
+            if (!fresh) taste.history.splice(at, 1);
+            taste.history.unshift(entry);
+        }
+        if (taste.history.length > MAX_HISTORY) taste.history.length = MAX_HISTORY;
+        if (how === 'loved') {
+            // Structured copy of the Love it list (taste.liked keeps "Title (year)" for the prompt).
+            taste.likedItems = taste.likedItems.filter(function (l) { return key(l) !== k; });
+            taste.likedItems.push(brief(show));
+            if (taste.likedItems.length > MAX_LIST) taste.likedItems.shift();
+        }
+        save();
+    }
+
     function noteAppOpen(item) {
         if (!item || !item.label) return;
         taste.opens[item.label] = (taste.opens[item.label] || 0) + 1;
@@ -106,7 +160,11 @@
     }
 
     function rate(item, how) {
-        if (how === 'liked') push(taste.liked, item);
+        if (how === 'liked') {
+            push(taste.liked, item);
+            remember(item, 'loved');
+            setTimeout(checkAiring, 500);
+        }
         if (how === 'disliked') push(taste.disliked, item);
         if (how === 'watched') push(taste.watched, item);
         if (how === 'disliked' || how === 'watched') {
@@ -344,6 +402,159 @@
         });
     }
 
+    // ---------- Continue watching and new episodes
+    //
+    // The launcher cannot see playback, so "Continue" means "opened from a card lately". Shows the
+    // household opened or loved are also checked against TMDB once a day for fresh episodes.
+
+    function parseDay(text) {
+        var t = text ? Date.parse(text) : NaN;     // "YYYY-MM-DD" (UTC midnight)
+        return isNaN(t) ? null : t;
+    }
+
+    function normTitle(t) {
+        return (t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function badgeFor(d) {
+        var now = Date.now();
+        var last = parseDay(d.last_air_date);
+        var next = d.next_episode_to_air ? parseDay(d.next_episode_to_air.air_date) : null;
+        var recent = last !== null && last <= now && now - last <= 21 * DAY_MS;
+        var soon = next !== null && next >= now - DAY_MS && next - now <= 7 * DAY_MS;
+        if (!recent && !soon) return '';
+        // The season being aired: the upcoming episode's when it is close, else the last one's.
+        var ep = soon ? d.next_episode_to_air : d.last_episode_to_air;
+        var num = ep ? ep.season_number : null;
+        var season = (d.seasons || []).filter(function (s) { return s.season_number === num; })[0];
+        var start = season ? parseDay(season.air_date) : null;
+        if (num > 1 && start !== null && start - now <= 7 * DAY_MS && now - start <= 30 * DAY_MS) return 'New season';
+        return 'New episodes';
+    }
+
+    function bad(k) {
+        return taste.disliked.indexOf(k) !== -1;
+    }
+
+    // Shows worth checking: opened or loved series, plus older "Title (year)" Love it entries.
+    function airingCandidates() {
+        var seen = {};
+        var list = [];
+        function add(show) {
+            var k = key(show);
+            if (seen[k] || bad(k) || show.type === 'movie' || show.kind === 'movie') return;
+            seen[k] = true;
+            list.push(show);
+        }
+        taste.history.forEach(add);
+        taste.likedItems.forEach(add);
+        taste.liked.forEach(function (text) {
+            var m = /^(.*) \((\d{4}|\?)\)$/.exec(text);
+            if (m) add({ title: m[1], year: m[2] === '?' ? undefined : Number(m[2]), legacy: true });
+        });
+        return list;
+    }
+
+    var checking = false;
+
+    function checkAiring() {
+        if (!enabled() || !cfg.tmdbKey || checking) return;
+        var mine = taste;
+        var now = Date.now();
+        var due = airingCandidates().filter(function (show) {
+            var c = mine.airing[key(show)];
+            return !c || now - c.at > (c.notTv ? 30 * AIRING_TTL_MS : AIRING_TTL_MS);
+        }).slice(0, AIRING_PER_RUN);
+        if (!due.length) return;
+        checking = true;
+        var changed = false;
+        var chain = Promise.resolve();
+        due.forEach(function (show) {
+            chain = chain.then(function () {
+                if (taste !== mine) return;     // profile switched meanwhile
+                return checkOne(show).then(function (badge) {
+                    var k = key(show);
+                    var old = mine.airing[k];
+                    if ((old && old.badge || '') !== (badge || '')) changed = true;
+                    mine.airing[k] = { at: Date.now(), badge: badge || '', notTv: badge === null };
+                }, function () {});
+            });
+        });
+        chain.then(function () {
+            checking = false;
+            if (taste !== mine) return;
+            save();
+            log('For you: checked ' + due.length + ' shows for new episodes');
+            if (changed) onChange();
+        });
+    }
+
+    // Resolves to a badge, '' when nothing new, or null when the title is not a TV show.
+    function checkOne(show) {
+        var lookup = show.tmdbId ? Promise.resolve(show) : findTmdb(show);
+        return lookup.then(function () {
+            if (!show.tmdbId || show.kind === 'movie') return null;
+            return tmdb('/tv/' + show.tmdbId, { language: 'en-US' }).then(function (d) {
+                if (!d || !d.id) return null;
+                if (!show.image && !show.legacy && d.backdrop_path) show.image = 'https://image.tmdb.org/t/p/w780' + d.backdrop_path;
+                // A legacy "Title (year)" may be a movie: only trust an exact name match.
+                if (show.legacy && normTitle(d.name) !== normTitle(show.title) &&
+                    normTitle(d.original_name) !== normTitle(show.title)) return null;
+                var badge = badgeFor(d);
+                if (badge && show.legacy) return adoptLegacy(show, d).then(function () { return badge; });
+                return badge;
+            });
+        });
+    }
+
+    // Older Love it entries were only text: give them artwork and an app so they can be cards.
+    function adoptLegacy(show, d) {
+        var item = { title: show.title, year: show.year || (d.first_air_date || '').slice(0, 4) * 1 || undefined,
+            type: 'show' };
+        return enrich(item).then(function (full) {
+            if (!full) return;
+            if (!full.image && d.backdrop_path) full.image = 'https://image.tmdb.org/t/p/w780' + d.backdrop_path;
+            if (!full.service) return;
+            full.liked = true;
+            if (!taste.likedItems.some(function (l) { return key(l) === key(show); })) {
+                var b = brief(full);
+                b.title = show.title;
+                b.year = show.year;
+                b.liked = true;
+                taste.likedItems.push(b);
+            }
+        });
+    }
+
+    // Up to MAX_CONTINUE recently opened titles, then shows with new episodes, MAX_RESUME in all.
+    function resumeCards() {
+        var now = Date.now();
+        var out = [];
+        var seen = {};
+        taste.history.filter(function (h) {
+            var k = key(h);
+            return h.openedAt && now - h.openedAt <= CONTINUE_DAYS * DAY_MS && !bad(k) &&
+                taste.watched.indexOf(k) === -1;
+        }).sort(function (a, b) { return b.openedAt - a.openedAt; }).slice(0, MAX_CONTINUE).forEach(function (h) {
+            seen[key(h)] = true;
+            out.push({ show: h, badges: ['Continue'], resume: true });
+        });
+        out.forEach(function (c) {
+            var a = taste.airing[key(c.show)];
+            if (a && a.badge) c.badges.push(a.badge);
+        });
+        var shelves = taste.history.concat(taste.likedItems);
+        for (var i = 0; i < shelves.length && out.length < MAX_RESUME; i++) {
+            var show = shelves[i];
+            var k = key(show);
+            var a = taste.airing[k];
+            if (seen[k] || !a || !a.badge || bad(k) || !show.service) continue;
+            seen[k] = true;
+            out.push({ show: show, badges: [a.badge], resume: !!show.openedAt });
+        }
+        return out;
+    }
+
     // ---------- Cards
 
     function serviceApp(service) {
@@ -356,7 +567,7 @@
         return null;
     }
 
-    function card(item) {
+    function card(item, extra) {
         var app = serviceApp(item.service);
         var brand = (app && app.brand) || findBrand({ name: item.service || '' });
         var wrap = el('div', 'app show');
@@ -371,13 +582,22 @@
             tile.appendChild(img);
             tile.appendChild(el('div', 'show-shade'));
         }
+        if (extra && extra.badges) {
+            tile.classList.add('badged');
+            var pills = el('div', 'show-badges');
+            extra.badges.forEach(function (b) {
+                pills.appendChild(el('div', 'show-badge' + (b === 'Continue' ? '' : ' new'), b));
+            });
+            tile.appendChild(pills);
+        }
         tile.appendChild(el('div', 'show-title', item.title));
         tile.appendChild(bar);
         tile.appendChild(el('div', 'show-meta', (item.type === 'movie' ? 'Movie' : 'Series') +
             (item.year ? ' · ' + item.year : '') + (item.liked ? '  ♥' : '')));
         wrap.appendChild(tile);
-        wrap.appendChild(el('div', 'label', (item.service || '') + (item.reason ? ' · ' + item.reason : '')));
-        wrap._item = { kind: 'show', show: item, app: app };
+        var note = extra ? extra.note : item.reason;
+        wrap.appendChild(el('div', 'label', (item.service || '') + (note ? ' · ' + note : '')));
+        wrap._item = { kind: 'show', show: item, app: app, resume: !!(extra && extra.resume) };
         return wrap;
     }
 
@@ -422,6 +642,7 @@
         onChange();
         refresh(false);
         prefetchTrailers();
+        setTimeout(checkAiring, 1500);
     }
 
     // Moods are canned requests; they go through the same path as a typed Ask.
@@ -464,11 +685,22 @@
         if (title) title.textContent = taste.query ? 'For you · “' + taste.query + '”' : 'For you';
         if (profiles.length > 1) row.appendChild(profileCard());
         row.appendChild(askCard());
-        taste.items.forEach(function (item) { row.appendChild(card(item)); });
+        var shown = {};
+        resumeCards().forEach(function (c) {
+            shown[key(c.show)] = true;
+            c.note = c.show.openedAt ? openedAgo(c.show.openedAt) : 'You loved it';
+            row.appendChild(card(c.show, c));
+        });
+        taste.items.forEach(function (item) { if (!shown[key(item)]) row.appendChild(card(item)); });
         if (fetching && !taste.items.length) row.appendChild(noteCard('Finding something to watch…'));
         else if (taste.error && !taste.items.length) row.appendChild(noteCard('Suggestions unavailable · OK to retry'));
         else row.appendChild(noteCard(fetching ? 'Updating…' : (taste.query ? '↻  Back to For you' : '↻  New suggestions')));
         return true;
+    }
+
+    function openedAgo(at) {
+        var days = Math.floor((Date.now() - at) / DAY_MS);
+        return days < 1 ? 'Opened today' : days === 1 ? 'Opened yesterday' : 'Opened ' + days + ' days ago';
     }
 
     function activate(item, launch) {
@@ -684,6 +916,8 @@
 
     function openTitle(item, launch) {
         var show = item.show;
+        remember(show, 'opened');
+        setTimeout(function () { onChange(); checkAiring(); }, 1500);
         var svc = serviceFor(item.app);
         if (!svc || !window.tizen) return launch(item.app);
         serviceLinks(show).then(function (links) {
@@ -779,7 +1013,7 @@
     function detailButtons(item, launch) {
         var show = item.show;
         var list = [];
-        if (item.app) list.push({ label: 'Open in ' + item.app.label, primary: true, run: function () { closeDetails(); openTitle(item, launch); } });
+        if (item.app) list.push({ label: (item.resume ? 'Resume in ' : 'Open in ') + item.app.label, primary: true, run: function () { closeDetails(); openTitle(item, launch); } });
         list.push({ label: show.liked ? '♥  Loved' : '♥  Love it', run: function () {
             rate(show, 'liked');
             renderButtons(item, launch, 1);
@@ -899,6 +1133,7 @@
             if (hit) {
                 item.tmdbId = hit.id;
                 item.kind = kind;
+                if (!item.image && hit.backdrop_path) item.image = 'https://image.tmdb.org/t/p/w780' + hit.backdrop_path;
                 save();
             }
             return item;
@@ -907,6 +1142,7 @@
 
     function prefetchTrailers() {
         if (!cfg.tmdbKey || cfg.previews === false) return;
+        resumeCards().forEach(function (c) { trailerKey(c.show); });
         taste.items.forEach(function (item) { trailerKey(item); });
     }
 
