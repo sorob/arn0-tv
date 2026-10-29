@@ -916,6 +916,21 @@
         stats: function () {
             return { liked: taste.liked.length, disliked: taste.disliked.length, watched: taste.watched.length };
         },
-        onChange: function (fn) { onChange = fn; }
+        onChange: function (fn) { onChange = fn; },
+        // Read-only, for the screen saver: suggestions that have a backdrop, liked ones first.
+        ambientItems: function () {
+            var seen = {};
+            var withArt = (taste.items || []).filter(function (i) {
+                if (!i || !i.title || !i.image || seen[key(i)]) return false;
+                seen[key(i)] = true;
+                return true;
+            });
+            var liked = withArt.filter(function (i) { return i.liked || taste.liked.indexOf(key(i)) !== -1; });
+            var rest = withArt.filter(function (i) { return liked.indexOf(i) === -1; });
+            return liked.concat(rest).map(function (i) {
+                return { title: i.title, year: i.year, type: i.type, service: i.service || '',
+                    reason: i.reason || '', image: i.image, liked: liked.indexOf(i) !== -1 };
+            });
+        }
     };
 })();

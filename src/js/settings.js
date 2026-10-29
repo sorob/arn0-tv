@@ -290,19 +290,27 @@
 
     function screensaverSummary() {
         var p = Prefs.get().screensaver;
-        return p.enabled ? 'After ' + Screensaver.delay().label : 'Off';
+        return p.enabled ? 'After ' + Screensaver.delay().label + ' · ' + Screensaver.source().label : 'Off';
     }
 
     /*
-     * "Change photo" only means something while the Background is on Rotate: with a single
-     * photo the screen saver holds it, exactly as Home does.
+     * "Change photo" only means something while the photos rotate: For you shows always do,
+     * wallpapers only while the Background is on Rotate — with a single photo the screen saver
+     * holds it, exactly as Home does.
+     *
+     * The page does not scroll, so "Show it now" rides on the first row and the fallback note
+     * sits on its heading line rather than under the chips: six rows would run into the hint bar.
      */
     function screensaverBlocks() {
+        var showing = Screensaver.source().key === 'shows' && Screensaver.hasShows();
         var blocks = [
-            { title: 'Screen saver', key: 'enabled', options: [[true, 'On'], [false, 'Off']] },
-            { title: 'Start after', key: 'delay', options: optionPairs(Screensaver.DELAYS) }
+            { title: 'Screen saver', key: 'enabled', options: [[true, 'On'], [false, 'Off']], preview: true },
+            { title: 'Start after', key: 'delay', options: optionPairs(Screensaver.DELAYS) },
+            { title: 'Show', key: 'source', options: optionPairs(Screensaver.SOURCES),
+                note: Screensaver.source().key === 'shows' && !showing ?
+                    'No For you picks with pictures yet, so wallpapers for now' : '' }
         ];
-        if (Prefs.get().wallpaper.mode === 'rotate') {
+        if (showing || Prefs.get().wallpaper.mode === 'rotate') {
             blocks.push({ title: 'Change photo every', key: 'photoEvery', options: optionPairs(Screensaver.PHOTO_EVERY) });
         }
         blocks.push({ title: 'Go dark after', key: 'dark', options: optionPairs(Screensaver.DARK_AFTER) });
@@ -319,21 +327,17 @@
         body.innerHTML = '';
         screensaverBlocks().forEach(function (b) {
             var block = el('div', 'setting-block');
-            block.appendChild(el('h2', '', b.title));
+            var head = el('h2', '', b.title);
+            if (b.note) head.appendChild(el('span', 'setting-note', b.note));
+            block.appendChild(head);
             var chips = el('div', 'chips');
             b.options.forEach(function (o) {
                 chips.appendChild(chip(o[1], p[b.key] === o[0], { key: b.key, value: o[0] }));
             });
+            if (b.preview) chips.appendChild(chip('Show it now', false, { kind: 'preview' }));
             block.appendChild(chips);
             body.appendChild(block);
         });
-
-        var tryBlock = el('div', 'setting-block');
-        tryBlock.appendChild(el('h2', '', 'Try it'));
-        var tryChips = el('div', 'chips');
-        tryChips.appendChild(chip('Show it now', false, { kind: 'preview' }));
-        tryBlock.appendChild(tryChips);
-        body.appendChild(tryBlock);
     }
 
     function activateScreensaver(item) {
