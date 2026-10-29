@@ -1090,6 +1090,37 @@ html.preview, html.preview body {
     font-size: 22px;
 }
 
+/* "Continue" / "New episodes" pills on For you cards */
+.show-tile.badged .show-title {
+    font-size: 30px;
+}
+
+.show-badges {
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    right: 18px;
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.show-badge {
+    margin: 0 8px 6px 0;
+    padding: 3px 12px 4px;
+    border-radius: 999px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: #111;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.show-badge.new {
+    color: #fff;
+    background: #e5484d;
+}
+
 .ask-tile {
     background: linear-gradient(135deg, #3a1c71, #d76d77 60%, #ffaf7b);
 }
