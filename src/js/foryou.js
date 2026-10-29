@@ -19,7 +19,9 @@
 (function () {
     'use strict';
 
+    // Each profile keeps its own taste; "everyone" keeps the original key so nothing is lost.
     var STORE_KEY = 'arn0.taste.v1';
+    var PROFILE_KEY = 'arn0.profile';
     var MAX_LIST = 80;          // titles kept per list in the prompt
     var REFETCH_AFTER_RATINGS = 3;
     var MAX_ASKS = 20;
@@ -39,13 +41,30 @@
             items: [], fetchedAt: 0, ratedSince: 0, error: '' };
     }
 
+    var profiles = (cfg.profiles && cfg.profiles.length) ? cfg.profiles : [{ id: 'everyone', name: 'Everyone' }];
+    var profileId = readProfile();
+
+    function readProfile() {
+        var id = null;
+        try { id = localStorage.getItem(PROFILE_KEY); } catch (e) {}
+        return profiles.some(function (p) { return p.id === id; }) ? id : profiles[0].id;
+    }
+
+    function profile() {
+        return profiles.filter(function (p) { return p.id === profileId; })[0] || profiles[0];
+    }
+
+    function storeKey() {
+        return profileId === 'everyone' ? STORE_KEY : STORE_KEY + '.' + profileId;
+    }
+
     var taste = load();
     setTimeout(function () { prefetchTrailers(); }, 4000);   // cards cached from an earlier run
 
     function load() {
         var t = blank();
         try {
-            var saved = JSON.parse(localStorage.getItem(STORE_KEY));
+            var saved = JSON.parse(localStorage.getItem(storeKey()));
             if (saved) Object.keys(t).forEach(function (k) { if (saved[k] !== undefined) t[k] = saved[k]; });
             // Suggestions made by an older prompt are dropped once; ratings and history are kept.
             if (!saved || saved.v !== PROMPT_VERSION) { t.items = []; t.fetchedAt = 0; }
@@ -58,7 +77,7 @@
     function save() {
         taste.v = PROMPT_VERSION;
         try {
-            localStorage.setItem(STORE_KEY, JSON.stringify(taste));
+            localStorage.setItem(storeKey(), JSON.stringify(taste));
         } catch (e) {
             log('For you: could not save taste');
         }
@@ -117,6 +136,9 @@
             {
                 role: 'system',
                 content: 'You recommend TV shows and movies for one household watching on a home projector. ' +
+                    (profile().kids ? 'This is the KIDS profile: every pick must suit children under 12 ' +
+                        '(movies G or PG, shows TV-Y, TV-Y7, TV-G or TV-PG); no exceptions, even if asked. ' :
+                        (profileId !== 'everyone' ? 'These picks are for one person, "' + profile().name + '". ' : '')) +
                     'Reply only with JSON {"items":[{"title":string,"year":number,"type":"show"|"movie",' +
                     '"service":string,"reason":string}]}. "service" must be exactly one of the household\'s apps, ' +
                     'the one where the title is most likely streaming in the ' + (cfg.region || 'US') + ' right now. ' +
@@ -242,6 +264,15 @@
                 page: page
             };
             params[(kind === 'tv' ? 'first_air_date' : 'primary_release_date') + '.gte'] = since;
+            if (profile().kids) {
+                // Family (10751), Animation (16), Kids (10762, TV only); movies also capped at PG.
+                params.with_genres = kind === 'tv' ? '10762|10751|16' : '10751|16';
+                if (kind === 'movie') {
+                    params.certification_country = 'US';
+                    params['certification.lte'] = 'PG';
+                }
+                params['vote_count.gte'] = kind === 'tv' ? 20 : 50;
+            }
             return tmdb('/discover/' + kind, params).then(function (res) {
                 return (res.results || []).map(function (r) {
                     var date = r.first_air_date || r.release_date || '';
@@ -358,6 +389,56 @@
         return wrap;
     }
 
+    function profileCard() {
+        var p = profile();
+        var wrap = el('div', 'app show');
+        var tile = el('div', 'tile show-tile profile-tile');
+        tile.appendChild(el('div', 'profile-avatar', p.name.charAt(0).toUpperCase()));
+        tile.appendChild(el('div', 'show-title', p.name));
+        tile.appendChild(el('div', 'show-meta', 'Switch profile'));
+        tile.style.background = 'linear-gradient(135deg, hsl(' + hueOf(p.name) + ',45%,26%), hsl(' + ((hueOf(p.name) + 40) % 360) + ',55%,38%))';
+        wrap.appendChild(tile);
+        wrap.appendChild(el('div', 'label', 'Watching as ' + p.name));
+        wrap._item = { kind: 'show-profile' };
+        return wrap;
+    }
+
+    function hueOf(text) {
+        var h = 0;
+        for (var i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) % 360;
+        return h;
+    }
+
+    function switchProfile(id) {
+        if (id === profileId) return;
+        stopPreview(false);
+        profileId = id;
+        try { localStorage.setItem(PROFILE_KEY, id); } catch (e) {}
+        taste = load();
+        log('For you: profile ' + profile().name);
+        onChange();
+        refresh(false);
+        prefetchTrailers();
+    }
+
+    // Moods are canned requests; they go through the same path as a typed Ask.
+    var MOODS = [
+        { label: 'Funny', query: 'something genuinely funny' },
+        { label: 'Thriller', query: 'a gripping thriller' },
+        { label: 'Short (under 100 min)', query: 'a movie under 100 minutes' },
+        { label: 'Family', query: 'something the whole family can watch together' },
+        { label: 'Award winners', query: 'award-winning, critically acclaimed picks' },
+        { label: 'Comfort rewatch', query: 'cozy comfort viewing, easy to dip into' }
+    ];
+
+    function askMenu() {
+        var options = [{ label: 'Type a request…', run: openAsk }];
+        MOODS.forEach(function (m) {
+            options.push({ label: m.label, run: function () { ask(m.query); } });
+        });
+        UI.menu('What are you in the mood for?', options);
+    }
+
     function askCard() {
         var wrap = el('div', 'app show');
         var tile = el('div', 'tile show-tile ask-tile');
@@ -378,6 +459,7 @@
         if (!enabled()) return false;
         var title = document.getElementById('foryou-title');
         if (title) title.textContent = taste.query ? 'For you · “' + taste.query + '”' : 'For you';
+        if (profiles.length > 1) row.appendChild(profileCard());
         row.appendChild(askCard());
         taste.items.forEach(function (item) { row.appendChild(card(item)); });
         if (fetching && !taste.items.length) row.appendChild(noteCard('Finding something to watch…'));
@@ -388,7 +470,14 @@
 
     function activate(item, launch) {
         if (item.kind === 'show-ask') {
-            openAsk();
+            askMenu();
+            return;
+        }
+        if (item.kind === 'show-profile') {
+            UI.menu('Who\'s watching?', profiles.map(function (p) {
+                return { label: p.name + (p.kids ? '  (family-safe)' : ''), checked: p.id === profileId,
+                    run: function () { switchProfile(p.id); } };
+            }));
             return;
         }
         if (item.kind === 'show-refresh') {
@@ -653,7 +742,9 @@
     }
 
     function relayUrl(key) {
-        return cfg.trailerRelay + '?v=' + key + (cfg.trailerSound ? '&sound=1&vol=' + (cfg.trailerVolume || 50) : '');
+        // k: shared secret checked by trailer-host/middleware.js (set in config.local.js, never committed)
+        return cfg.trailerRelay + '?v=' + key + (cfg.trailerSecret ? '&k=' + encodeURIComponent(cfg.trailerSecret) : '') +
+            (cfg.trailerSound ? '&sound=1&vol=' + (cfg.trailerVolume || 50) : '');
     }
 
     function playTrailer(key, item) {
@@ -779,6 +870,10 @@
         input.blur();
         UI.back();
         if (!submit || !query) return;
+        ask(query);
+    }
+
+    function ask(query) {
         taste.asks.push(query);
         if (taste.asks.length > MAX_ASKS) taste.asks.shift();
         save();

@@ -39,9 +39,17 @@ window.LAUNCHER_CONFIG = {
         count: 14,
         refreshHours: 6,
         previews: true,         // trailer/artwork behind Home while a For you card is highlighted
+        // Who's watching: each profile has its own likes and suggestions; kids: true = family-safe only.
+        profiles: [
+            { id: 'everyone', name: 'Everyone' },
+            { id: 'me', name: 'Me' },
+            { id: 'partner', name: 'Partner' },
+            { id: 'kids', name: 'Kids', kids: true }
+        ],
         trailerSound: true,     // trailers with sound (needs trailerRelay); falls back to muted if blocked
         trailerVolume: 50,      // 0-100, relative to the projector's own volume
-        trailerRelay: null      // URL of trailer-host/index.html on a web server; without it YouTube refuses (153)
+        trailerRelay: 'https://trailer-host.vercel.app/',  // trailer-host/index.html; without it YouTube refuses (153)
+        trailerSecret: null     // relay's RELAY_SECRET; set it in js/config.local.js, never here
     },
 
     inputs: [
