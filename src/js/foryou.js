@@ -1088,7 +1088,8 @@
     // player stays loaded while on Home and just switches videos, so moving along the row
     // starts the next trailer without reloading YouTube.
 
-    var PREVIEW_DELAY_MS = 250;     // only so sweeping along the row doesn't start every card
+    var ART_DELAY_MS = 300;         // artwork once the highlight rests this long
+    var VIDEO_DELAY_MS = 650;       // trailer request only after a real pause on a card
     var preview = { el: null, timer: null, item: null, frame: null, ready: false, watch: null };
 
     function previewEl() {
@@ -1227,36 +1228,31 @@
         setProgress(item, item ? 10 : 0);
     }
 
+    /*
+     * Moving along the row must stay cheap: a key press only moves the highlight and resets the
+     * loading line. The artwork (the card's own, already-decoded w780 picture) appears once the
+     * highlight rests for ART_DELAY_MS, and the trailer is only requested after VIDEO_DELAY_MS,
+     * so sweeping across cards never starts YouTube work mid-sweep.
+     */
     function startPreview(item) {
         clearTimeout(preview.timer);
+        clearTimeout(preview.videoTimer);
         preview.item = item;
-        var old = document.querySelectorAll('#foryou-row .load-bar');
+        var old = document.querySelectorAll('#foryou-row .load-bar[data-p]');
         for (var i = 0; i < old.length; i++) old[i].setAttribute('data-p', '0');
         setLoading(cfg.trailerRelay && cfg.tmdbKey && item.trailer !== '' ? item : null);
-        // The previous card's trailer goes at once; never show it behind the new card.
+        // The previous card's trailer goes at once; silence it once, not on every press.
         if (preview.el) preview.el.classList.remove('playing');
-        if (preview.frame && cfg.trailerRelay) preview.frame.contentWindow.postMessage({ arn0: 'stop' }, '*');
+        if (preview.sounding && preview.frame && cfg.trailerRelay) {
+            preview.frame.contentWindow.postMessage({ arn0: 'stop' }, '*');
+            preview.sounding = false;
+        }
         preview.timer = setTimeout(function () {
             if (preview.item !== item) return;
             var box = previewEl();
-            var art = box.querySelector('.preview-art');
-            art.style.backgroundImage = item.image ? 'url("' + item.image.replace('/w780/', '/w1280/') + '")' : 'none';
-            // Restart the pan for the new picture.
-            box.classList.remove('visible');
-            void box.offsetWidth;
-            box.classList.add('visible');
+            box.querySelector('.preview-art').style.backgroundImage = item.image ? 'url("' + item.image + '")' : 'none';
+            if (!box.classList.contains('visible')) box.classList.add('visible');
             document.documentElement.classList.add('previewing');
-            trailerKey(item).then(function (key) {
-                if (preview.item !== item) return;
-                if (key) {
-                    setProgress(item, 35);
-                    playTrailer(key, item);
-                }
-                else {
-                    setLoading(null);
-                    pauseFrame();
-                }
-            });
             if (!preview.watch) {
                 // Leaving Home (Settings, All apps, an app) ends the preview and frees the player.
                 preview.watch = setInterval(function () {
@@ -1264,7 +1260,21 @@
                     if (document.hidden || (v !== 'home' && v !== 'menu' && v !== 'details')) stopPreview(true);
                 }, 500);
             }
-        }, PREVIEW_DELAY_MS);
+        }, ART_DELAY_MS);
+        preview.videoTimer = setTimeout(function () {
+            if (preview.item !== item) return;
+            trailerKey(item).then(function (key) {
+                if (preview.item !== item) return;
+                if (key) {
+                    setProgress(item, 35);
+                    playTrailer(key, item);
+                    preview.sounding = true;
+                } else {
+                    setLoading(null);
+                    pauseFrame();
+                }
+            });
+        }, VIDEO_DELAY_MS);
     }
 
     function onPlayerMessage(e) {
@@ -1302,6 +1312,8 @@
     // full: also unload the player (leaving Home); otherwise it stays warm for the next card.
     function stopPreview(full) {
         clearTimeout(preview.timer);
+        clearTimeout(preview.videoTimer);
+        preview.sounding = false;
         setLoading(null);
         preview.item = null;
         if (full) {
