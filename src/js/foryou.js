@@ -792,7 +792,12 @@
                 { prop: 'P6467', url: 'https://www.hulu.com/series/{id}' },              // <uuid>
                 { prop: 'P6466', url: 'https://www.hulu.com/movie/{id}' }
             ],
-            payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}'],
+            // Variant 1 (Samsung preview form) was ignored on the SP-LSP7T (2026-10-29): app opened, no title.
+            // 4-5 follow Hulu's Roku/DIAL form (contentId + mediaType); 6 is the eden_resume route that
+            // works for Prime on Tizen 9. mediaType=series fits P6467; movies would need mediaType=movie.
+            payloads: ['{"values":"{url}"}', '{url}', '{"values":"{id}"}',
+                '{"values":"contentId={id}&mediaType=series"}', 'contentId={id}&mediaType=series',
+                { payload: '{"values":"{url}"}', op: EDEN }],
             test: { title: 'The Bear', id: '05eb6a8e-90ed-4947-8c0b-e6536cbddd5f' }
         },
         apple: {
@@ -1234,6 +1239,47 @@
      * highlight rests for ART_DELAY_MS, and the trailer is only requested after VIDEO_DELAY_MS,
      * so sweeping across cards never starts YouTube work mid-sweep.
      */
+    /*
+     * Large artwork cache. The card's w780 picture is shown at once (already decoded), and the
+     * w1280 one is fetched lazily when the highlight rests; it is decoded before use so the swap
+     * never stalls a frame. The last LARGE_KEEP images stay referenced, keeping them decoded,
+     * so revisiting a card is sharp immediately.
+     */
+    var LARGE_KEEP = 20;
+    var large = {};          // url -> { img, ready, waiting: [fn] }
+    var largeOrder = [];
+
+    function loadLarge(item, done) {
+        if (!item.image || item.image.indexOf('/w780/') === -1) return;
+        var url = item.image.replace('/w780/', '/w1280/');
+        var entry = large[url];
+        if (entry) {
+            largeOrder.splice(largeOrder.indexOf(url), 1);
+            largeOrder.push(url);
+            if (entry.ready) done(url);
+            else entry.waiting.push(done);
+            return;
+        }
+        entry = large[url] = { img: new Image(), ready: false, waiting: [done] };
+        largeOrder.push(url);
+        while (largeOrder.length > LARGE_KEEP) delete large[largeOrder.shift()];
+        var finish = function () {
+            entry.ready = true;
+            entry.waiting.forEach(function (fn) { fn(url); });
+            entry.waiting = [];
+        };
+        entry.img.onload = function () {
+            if (entry.img.decode) entry.img.decode().then(finish, finish);
+            else finish();
+        };
+        entry.img.onerror = function () {
+            delete large[url];
+            var i = largeOrder.indexOf(url);
+            if (i >= 0) largeOrder.splice(i, 1);
+        };
+        entry.img.src = url;
+    }
+
     function startPreview(item) {
         clearTimeout(preview.timer);
         clearTimeout(preview.videoTimer);
@@ -1250,7 +1296,12 @@
         preview.timer = setTimeout(function () {
             if (preview.item !== item) return;
             var box = previewEl();
-            box.querySelector('.preview-art').style.backgroundImage = item.image ? 'url("' + item.image + '")' : 'none';
+            var art = box.querySelector('.preview-art');
+            art.style.backgroundImage = item.image ? 'url("' + item.image + '")' : 'none';
+            // Sharp version swaps in once downloaded and decoded off screen.
+            loadLarge(item, function (url) {
+                if (preview.item === item) art.style.backgroundImage = 'url("' + url + '")';
+            });
             if (!box.classList.contains('visible')) box.classList.add('visible');
             document.documentElement.classList.add('previewing');
             if (!preview.watch) {
