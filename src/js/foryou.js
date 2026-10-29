@@ -216,7 +216,7 @@
         return labels.filter(function (l) { return !/spotify|youtube$/i.test(l); });
     }
 
-    function prompt(query, recent) {
+    function prompt(query, recent, matches) {
         var opens = Object.keys(taste.opens).sort(function (a, b) {
             return taste.opens[b] - taste.opens[a];
         }).slice(0, 8).map(function (k) { return k + ' (' + taste.opens[k] + ')'; });
@@ -234,10 +234,15 @@
                     '"reason": under 60 characters, tied to their taste when you know it. Never suggest a title ' +
                     'they liked, disliked or watched. Lean towards their liked titles; avoid what resembles ' +
                     'their dislikes. Mix shows and movies and include a couple of less obvious picks. ' +
-                    'When they make a request, every pick must fit it, and "reason" says how it fits. ' +
-                    'Today is ' + new Date().toISOString().slice(0, 10) + '. At least half of the picks must be ' +
-                    'from the last two years; take those from the list of recent releases when one is given ' +
-                    '(it is live data and newer than your knowledge), unless the request asks for older titles.'
+                    'Today is ' + new Date().toISOString().slice(0, 10) + '. ' +
+                    (query ?
+                        'They made a request: it overrides their usual taste, which only breaks ties. Every pick must ' +
+                        'clearly match the request\'s genre, tone and any year or length it names; never include a ' +
+                        'title whose genre or mood contradicts it (no dark thrillers for a romantic comedy). Pick from ' +
+                        'the list of matching titles when one is given (live data, newer than your knowledge), and ' +
+                        '"reason" says how each pick fits the request.' :
+                        'At least half of the picks must be from the last two years; take those from the list of ' +
+                        'recent releases when one is given (it is live data and newer than your knowledge).')
             },
             {
                 role: 'user',
@@ -249,7 +254,9 @@
                         (taste.watchlist.map(key).join('; ') || 'none') + '\n' +
                     'Most-opened apps: ' + (opens.join(', ') || 'unknown') + '\n' +
                     'Earlier requests (hints at taste): ' + (taste.asks.join('; ') || 'none') + '\n' +
-                    (recent && recent.length ? 'Popular recent releases on their apps: ' + recent.join('; ') + '\n' : '') +
+                    (matches && matches.length ? 'Titles on their apps matching the request (live TMDB, already filtered by genre and year): ' +
+                        matches.join('; ') + '\n' :
+                        (recent && recent.length ? 'Popular recent releases on their apps: ' + recent.join('; ') + '\n' : '')) +
                     (query ? 'Their request right now: "' + query + '"\n' : '') +
                     'Give ' + (cfg.count || 14) + ' picks.'
             }
@@ -267,7 +274,7 @@
                 try {
                     var data = JSON.parse(xhr.responseText);
                     if (data.error) return reject(new Error(data.error.message));
-                    resolve(JSON.parse(data.choices[0].message.content).items || []);
+                    resolve(JSON.parse(data.choices[0].message.content));
                 } catch (e) {
                     reject(new Error('Bad reply (' + xhr.status + ')'));
                 }
@@ -293,9 +300,20 @@
         taste.query = query;
         log('For you: asking ' + (cfg.model || 'gpt-5.4-mini') + (query ? ' "' + query + '"' : '') + '…');
         onChange();
-        recentTitles().then(function (recent) {
-            return request(prompt(query, recent));
-        }).then(enrichAll).then(function (items) {
+        var filters = null;
+        var pipeline = query ?
+            parseQuery(query).then(function (f) {
+                filters = f;
+                return Promise.all([recentTitles(), discoverFor(f)]);
+            }).then(function (r) {
+                return request(prompt(query, r[0], r[1]));
+            }) :
+            recentTitles().then(function (recent) { return request(prompt('', recent)); });
+        pipeline.then(function (reply) {
+            return enrichAll((reply && reply.items) || []);
+        }).then(function (items) {
+            return filters ? matchFilters(items, filters) : items;
+        }).then(function (items) {
             var seen = {};
             taste.liked.concat(taste.disliked, taste.watched, taste.watchlist.map(key)).forEach(function (k) { seen[k] = true; });
             taste.items = items.filter(function (i) { return i && i.title && !seen[key(i)]; });
@@ -397,6 +415,123 @@
         });
     }
 
+    // ---------- Requests (Ask / moods): parse into filters, fetch matching titles, check results
+
+    // TMDB genre ids by kind. TV has no Romance genre and merges some (Sci-Fi & Fantasy).
+    var GENRES = {
+        movie: { action: 28, adventure: 12, animation: 16, comedy: 35, crime: 80, documentary: 99, drama: 18,
+            family: 10751, fantasy: 14, history: 36, horror: 27, music: 10402, mystery: 9648, romance: 10749,
+            'science fiction': 878, thriller: 53, war: 10752, western: 37 },
+        tv: { action: 10759, adventure: 10759, animation: 16, comedy: 35, crime: 80, documentary: 99, drama: 18,
+            family: 10751, kids: 10762, mystery: 9648, reality: 10764, 'science fiction': 10765, fantasy: 10765,
+            war: 10768, western: 37 }
+    };
+
+    function genreIds(names, kind) {
+        var out = [];
+        (names || []).forEach(function (n) {
+            var id = GENRES[kind][String(n).toLowerCase()];
+            if (id && out.indexOf(id) === -1) out.push(id);
+        });
+        return out;
+    }
+
+    // One small model call: "romantic comedy 2026" -> { genres: [romance, comedy], year_from: 2026, ... }
+    function parseQuery(query) {
+        var names = Object.keys(GENRES.movie).concat(['kids', 'reality']);
+        return request([
+            {
+                role: 'system',
+                content: 'Turn a request for something to watch into search filters. Today is ' +
+                    new Date().toISOString().slice(0, 10) + '. Reply only with JSON {"genres":[string],' +
+                    '"exclude_genres":[string],"year_from":number|null,"year_to":number|null,' +
+                    '"type":"movie"|"show"|null,"max_runtime":number|null}. Genre names only from: ' + names.join(', ') +
+                    '. "genres": every genre the request requires (all must apply; e.g. romantic comedy -> ' +
+                    'romance, comedy). "exclude_genres": genres that contradict its mood (e.g. romantic comedy -> ' +
+                    'horror, thriller, crime, war). Years only if the request names or implies them. ' +
+                    'max_runtime in minutes only if it asks for something short.'
+            },
+            { role: 'user', content: query }
+        ]).then(function (f) {
+            log('For you: request filters ' + JSON.stringify(f));
+            return f || {};
+        }).catch(function () { return {}; });
+    }
+
+    function providerIds() {
+        var services = installedServices();
+        return PROVIDERS.filter(function (p) {
+            return p.id && services.some(function (l) { return p.app.test(l); });
+        }).map(function (p) { return p.id; });
+    }
+
+    // Titles on the household's apps that match the parsed filters, most popular first.
+    function discoverFor(f) {
+        if (!cfg.tmdbKey || !f || !((f.genres && f.genres.length) || f.year_from || f.year_to)) return Promise.resolve([]);
+        var ids = providerIds();
+        if (!ids.length) return Promise.resolve([]);
+        var kinds = f.type === 'movie' ? ['movie'] : f.type === 'show' ? ['tv'] : ['movie', 'tv'];
+        // A required genre TV doesn't have (Romance) means the request is really about movies.
+        if (kinds.length === 2 && !coversAll(f.genres, 'tv')) kinds = ['movie'];
+        return Promise.all(kinds.map(function (kind) {
+            var want = genreIds(f.genres, kind);
+            var dateKey = kind === 'tv' ? 'first_air_date' : 'primary_release_date';
+            var params = {
+                watch_region: cfg.region || 'US',
+                with_watch_providers: ids.join('|'),
+                with_watch_monetization_types: 'flatrate|free|ads',
+                sort_by: 'popularity.desc',
+                'vote_count.gte': 3
+            };
+            if (want.length) params.with_genres = want.join(',');
+            var avoid = genreIds(f.exclude_genres, kind);
+            if (avoid.length) params.without_genres = avoid.join('|');
+            if (f.year_from) params[dateKey + '.gte'] = f.year_from + '-01-01';
+            if (f.year_to) params[dateKey + '.lte'] = f.year_to + '-12-31';
+            if (kind === 'movie' && f.max_runtime) params['with_runtime.lte'] = f.max_runtime;
+            if (profile().kids) {
+                params.with_genres = (params.with_genres ? params.with_genres + ',' : '') + (kind === 'tv' ? '10762' : '10751');
+                if (kind === 'movie') {
+                    params.certification_country = 'US';
+                    params['certification.lte'] = 'PG';
+                }
+            }
+            return tmdb('/discover/' + kind, params).then(function (res) {
+                return (res.results || []).slice(0, 25).map(function (r) {
+                    var date = r.first_air_date || r.release_date || '';
+                    return (r.name || r.title) + ' (' + date.slice(0, 4) + ', ' + (kind === 'tv' ? 'show' : 'movie') + ')';
+                });
+            }).catch(function () { return []; });
+        })).then(function (lists) {
+            var list = [].concat.apply([], lists);
+            log('For you: ' + list.length + ' TMDB titles match the request');
+            return list;
+        });
+    }
+
+    function coversAll(names, kind) {
+        return (names || []).every(function (n) { return GENRES[kind][String(n).toLowerCase()]; });
+    }
+
+    // Safety net after enrichment: drop picks whose TMDB genres or year contradict the request.
+    function matchFilters(items, f) {
+        function fits(item, strict) {
+            if (!item.genreIds) return !strict;
+            var kind = item.kind || (item.type === 'movie' ? 'movie' : 'tv');
+            var bad = genreIds(f.exclude_genres, kind).some(function (g) { return item.genreIds.indexOf(g) !== -1; });
+            if (bad) return false;
+            if (f.year_from && item.year && item.year < f.year_from) return false;
+            if (f.year_to && item.year && item.year > f.year_to) return false;
+            if (!strict) return true;
+            if (!coversAll(f.genres, kind)) return false;
+            return genreIds(f.genres, kind).every(function (g) { return item.genreIds.indexOf(g) !== -1; });
+        }
+        var strict = items.filter(function (i) { return fits(i, true); });
+        var out = strict.length >= 5 ? strict : items.filter(function (i) { return fits(i, false); });
+        log('For you: ' + out.length + ' of ' + items.length + ' picks fit the request' + (out === strict ? '' : ' (relaxed)'));
+        return out;
+    }
+
     // Resolves to the item with image/service filled in, or null when no household app streams it.
     function enrich(item) {
         var kind = item.type === 'movie' ? 'movie' : 'tv';
@@ -407,6 +542,8 @@
             if (!hit) return item;
             item.tmdbId = hit.id;
             item.kind = kind;
+            item.genreIds = hit.genre_ids || [];
+            if (!item.year) item.year = Number((hit.release_date || hit.first_air_date || '').slice(0, 4)) || item.year;
             if (hit.backdrop_path) item.image = 'https://image.tmdb.org/t/p/w780' + hit.backdrop_path;
             return tmdb('/' + kind + '/' + hit.id + '/watch/providers').then(function (wp) {
                 var region = wp.results && wp.results[cfg.region || 'US'];
