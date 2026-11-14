@@ -14,4 +14,8 @@ window.LAUNCHER_LOCAL = {
     // devLogUrl: null,
 
     // locale: 'fr-FR',
+
+    // For you (js/foryou.js): OpenAI key for the row, TMDB key for artwork and where-to-watch,
+    // and the trailer relay's RELAY_SECRET (see trailer-host/).
+    // ai: { apiKey: 'sk-...', tmdbKey: '...', trailerSecret: '...' },
 };

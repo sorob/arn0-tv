@@ -10,6 +10,11 @@ and nothing else.
 I built this for one TV in my living room, a Samsung Q70B on Tizen 6.5, because its own home
 screen had become a shop. It does what I want: the apps I use, the consoles I own, driven by the normal remote. I am sharing it as a starting point rather than a product.
 
+This fork also runs on a Samsung The Premiere projector (Tizen) and adds three optional rows and
+screens on top: **For you** (AI show and movie picks with trailer previews), **My List**, and
+**Live TV** (free live channels, including French and Persian ones). Each is described under
+[Reference](#reference); without its keys or config, each one simply stays out of the way.
+
 **Use it at your own risk.** The optional Home-button setup changes TV preferences that Samsung
 does not document. See [the setup guide](docs/setup-tv.md) before using it.
 
@@ -47,7 +52,7 @@ the TV's copy wins (`config.js` only supplies the defaults).
 Beyond config: tile colours and brand marks in [`src/js/brands.js`](src/js/brands.js), the whole
 look in [`src/css/style.css`](src/css/style.css), and your own photos as wallpapers.
 
-Anything specific to your own TV — weather coordinates, a devlog address — belongs in
+Anything specific to your own TV — weather coordinates, a devlog address, API keys — belongs in
 `src/js/config.local.js` instead. That file is gitignored and merged over `config.js` one level
 deep, so the tracked file keeps its nulls while the local one reaches both the browser preview and
 the packaged `.wgt`. Nothing to strip before a push, nothing to restore before a build. Copy
@@ -101,6 +106,7 @@ Evidence and limits:
 npm run preview      # browser preview on :8080
 npm run build        # -> dist/arn0-launcher.wgt
 npm run devlog       # receive Lab logs from the TV into logs/tv.jsonl
+TV_IP=<tv-ip> ./deploy.sh   # build, sign (Tizen Studio profile "projector"), install and launch
 node scripts/prepare-wallpapers.mjs <folder>   # regenerate wallpapers from your photos
 ```
 
@@ -111,6 +117,7 @@ node scripts/prepare-wallpapers.mjs <folder>   # regenerate wallpapers from your
 | Arrows | move (Up from the apps row reaches the gear = Settings) |
 | OK | open app / switch input / select |
 | Back | one level back (does nothing on Home) |
+| CH ▲▼ | change channel in the Live TV player (as ▲▼ do) |
 
 Hidden shortcuts: Red = All apps, Green = next wallpaper, Yellow (in All apps) = show system apps,
 Blue = Lab. On Home, Left and Right alternating three times (◀ ▶ ◀ ▶ ◀ ▶) starts the hidden game;
@@ -118,14 +125,41 @@ OK / Up jumps, Down ducks, Back returns Home. The code alternates rather than re
 because a held remote key auto-repeats, which would both break a run-based code and fire it by
 accident while sweeping along a row.
 
+### For you and My List
+
+A row on Home of shows and movies picked for the household by the OpenAI API, learning from what
+you rate here (OK on a card: Love it / Not for us / Already watched) and from which apps you open.
+The launcher cannot see what plays inside other apps, so that is all it knows. It needs
+`ai.apiKey` in `config.local.js`; with no key there is no row. With a [TMDB](https://www.themoviedb.org/)
+key as well (`ai.tmdbKey`), each pick gets artwork and is checked against where it actually streams,
+titles none of your apps carry are dropped, and series you follow get **New episodes** cards.
+Titles opened from a card in the last 30 days come back as **Continue** cards.
+
+- **Previews.** Resting on a card shows its artwork behind Home, then its trailer, and the rest of
+  Home falls back. YouTube refuses embeds from a packaged app, so trailers go through a small relay
+  page, [`trailer-host/`](trailer-host), deployed on Vercel with a `RELAY_SECRET` environment
+  variable; the launcher sends the same secret as `ai.trailerSecret` from `config.local.js`.
+- **Details.** OK on a card opens its description, the rating choices and **Open in &lt;app&gt;**, which tries to
+  open that title inside the app (`deepLinks` in `config.js`; the Lab screen tests the formats).
+- **Ask.** A card for a request in words, such as "something funny under 90 minutes", typed with the
+  on-screen keyboard or dictated where the TV supports it.
+- **Profiles.** Each profile (`ai.profiles`) keeps its own ratings and picks; `kids: true` keeps
+  them family-safe.
+- **My List.** Add a title from its details screen; it gets its own row at the bottom of Home and
+  is never suggested again.
+
+Everything stays in the TV's `localStorage`; only titles and app names go to OpenAI, and titles to
+TMDB.
+
 ### Live TV
 
-The **Live TV** tile on Home opens about 95 free channels in tabs: News, World, Weather, Sports,
+The **Live TV** tile on Home opens over 90 free channels in tabs: News, World, Weather, Sports,
 Kids, Entertainment, France (in French) and Iran (Persian, mostly channels broadcasting from
 abroad). Resting on a channel previews it behind the page, as For you does with trailers, and the
 grid becomes one row of the whole tab for browsing with ◀▶. OK goes full screen on the same stream;
 there ▲▼ or the remote's CH rocker change channel, OK turns closed captions on or off (most US
-channels carry them), Back returns to the row.
+channels carry them; the Persian and most French ones do not), Back returns to the row.
+`liveTv.previews` turns the preview off and `liveTv.previewVolume` (0–100) sets how loud it is.
 
 The list is [`src/js/channels.js`](src/js/channels.js). Every entry is a free stream published by
 the broadcaster or its own free ad-supported service, found through
@@ -134,12 +168,16 @@ re-streamed by third parties are left out on purpose. Free streams move without 
 channel that fails shows "Not available right now". `liveTv.playlists` in `config.js` adds whole
 M3U files (e.g. an iptv-org country list) on top; those are not checked.
 
+Playback is a plain `<video>` using the TV's own HLS support. A stream the engine rejects, and the
+browser preview in browsers without native HLS, fall back to hls.js loaded from cdnjs. Some
+streams are only offered in their home country, and Iran's state IRIB channels refuse browser
+requests from other sites, so they cannot be tried in the preview.
+
 ### Layout
 
 ```
 src/                  everything that goes into the .wgt
   config.xml          Tizen manifest (app id, privileges)
-  js/channels.js      free Live TV channels; js/livetv.js is the grid and player
   css/style.css       1920x1080 stage; performance rules measured, not assumed (see its header)
   fonts/              Manrope, Inter, Outfit, DM Sans (OFL), bundled so nothing loads from the network
   img/marks/          brand marks (Simple Icons CC0, Custom Brand Icons MIT; see SOURCES.md)
@@ -157,6 +195,11 @@ src/                  everything that goes into the .wgt
   js/prefs.js         settings saved on the TV
   js/ui.js            screens, focus, keys, toast, pop-up menu
   js/home.js          Home, All apps, Lab
+  js/foryou.js        For you row, My List, previews, details, Ask, profiles, deep links
+  js/channels.js      the free Live TV channel list
+  js/livetv.js        Live TV grid, preview row and player
+  js/sound.js         navigation sounds (synthesised, no audio files)
+  js/runner-game.js   the hidden game
   js/settings.js      Settings pages
   js/devlog.js        development log (Lab screen, optional upload to your computer)
   js/render-probe.js  measures what this TV can actually render (Lab screen only)
@@ -164,6 +207,8 @@ src/                  everything that goes into the .wgt
   js/boot.js          start-up
   js/tizen-mock.js    fake Tizen APIs for the browser preview (inactive on the TV)
 scripts/              build.sh, serve.mjs, devlog-server.mjs, fetch-assets.mjs, make-icon.mjs
+trailer-host/         YouTube relay page for For you trailers (deployed separately, on Vercel)
+deploy.sh             build, sign, install and launch on a TV in Developer Mode
 native/               guarded Home/startup helpers — read docs/setup-tv.md first
 docs/                 setup guide
 ```
@@ -300,9 +345,9 @@ probe now measures against `Date.now()` and flags any sample faster than the pan
 | --- | --- |
 | `application.launch` | opening apps and the TV viewer |
 | `application.info` | listing apps |
-| `tv.inputdevice` | colour keys (arrows, OK and Back need no registration) |
+| `tv.inputdevice` | colour keys and CH ▲▼ (arrows, OK and Back need no registration) |
 | `tv.window` | HDMI source switching and display |
-| `internet` + `<access origin="*">` | the Open-Meteo request and the development log |
+| `internet` + `<access origin="*">` | Open-Meteo, the development log, OpenAI and TMDB (For you), trailers, Live TV streams |
 
 ## Contribute
 
@@ -316,7 +361,9 @@ TV where `db/menu/smart_hub/ontvsetting/auto_start` starts at `0`.
 
 MIT for the original code and documentation — see [LICENSE](LICENSE). Bundled fonts (OFL), Unsplash
 photos and brand marks keep their own terms. Weather data by [Open-Meteo](https://open-meteo.com/),
-used under its non-commercial licence. Brand names and logos belong to their owners.
+used under its non-commercial licence. Show data and artwork from TMDB; this product uses the TMDB
+API but is not endorsed or certified by TMDB. Live TV channels were found through
+[iptv-org](https://github.com/iptv-org/iptv); the streams belong to their broadcasters. Brand names and logos belong to their owners.
 
 This project is independent and is not affiliated with Samsung or any streaming service.
 
