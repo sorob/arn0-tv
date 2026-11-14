@@ -106,6 +106,17 @@
         return wrap;
     }
 
+    function liveTvTile() {
+        var wrap = el('div', 'app');
+        var tile = el('div', 'tile all-tile');
+        tile.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+            '<rect x="2.5" y="6.5" width="19" height="13" rx="2.5"/><path d="M8 2.5l4 4 4-4"/></svg>';
+        wrap.appendChild(tile);
+        wrap.appendChild(el('div', 'label', 'Live TV'));
+        wrap._item = { kind: 'livetv' };
+        return wrap;
+    }
+
     function inputTile(input) {
         var brand = findBrand(input.brand || '') || { bg: '#2a2f3a', fg: '#fff', mark: null };
         var wrap = el('div', 'input');
@@ -170,6 +181,7 @@
         var items = homeItems();
         if (!items.length) items = Apps.allSorted(state.apps, false).slice(0, 8);
         items.forEach(function (item) { row.appendChild(appTile(item)); });
+        if (window.LiveTV && LiveTV.enabled()) row.appendChild(liveTvTile());
         row.appendChild(allAppsTile());
 
         var row2 = $('inputs-row');
@@ -431,6 +443,7 @@
             activate: function (item) {
                 if (item.kind === 'app') launchApp(item);
                 else if (item.kind === 'all') UI.show('all');
+                else if (item.kind === 'livetv') UI.show('livetv');
                 else if (item.kind === 'input') openInput(item);
                 else if (item.kind === 'settings') UI.show('settings');
                 else if (/^show/.test(item.kind)) ForYou.activate(item, launchApp);

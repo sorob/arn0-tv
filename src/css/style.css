@@ -1491,3 +1491,163 @@ html.preview, html.preview body {
 .previewing #home.list-focus #mylist-section {
     transform: translateY(-230px);
 }
+
+/* ---------- Live TV (js/livetv.js) ---------- */
+
+.livetv-tabs {
+    position: absolute;
+    top: 214px;
+    left: var(--edge);
+    right: var(--edge);
+}
+
+/* The tab whose channels are in the grid. */
+.chip.on-tab {
+    background: rgba(255, 255, 255, 0.2);
+    color: var(--fg);
+}
+
+.chip.on-tab.focused {
+    background: var(--fg);
+    color: var(--bg);
+}
+
+.livetv-viewport {
+    top: 310px;
+}
+
+.channel .mono {
+    font-size: 56px;
+}
+
+.live-dot {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    padding: 3px 10px;
+    border-radius: 8px;
+    background: #e5383b;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #fff;
+}
+
+/*
+ * Live TV picture, behind every view (it comes right after #bg). Only shown while a channel
+ * previews on the grid or plays full screen; the video fades in once it has a picture.
+ */
+#live-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    display: none;
+}
+
+.live-on #live-layer { display: block; }
+.live-full #live-layer { background: #000; }
+
+#live-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+}
+
+#live-layer.playing #live-video { opacity: 1; }
+
+/* Same shade as the For you preview: open at the top, dark under the row. */
+.live-shade {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    background:
+        linear-gradient(to bottom, rgba(10, 11, 15, 0) 0%, rgba(10, 11, 15, 0) 55%, rgba(10, 11, 15, 0.7) 78%, rgba(10, 11, 15, 0.92) 100%),
+        linear-gradient(to right, rgba(10, 11, 15, 0.35) 0%, rgba(10, 11, 15, 0) 40%);
+}
+
+.live-full .live-shade { display: none; }
+
+/* Focus mode while a channel previews (js/livetv.js focusMode). */
+#livetv .page-head,
+#livetv .livetv-tabs {
+    transition: transform 0.32s ease-out, opacity 0.32s ease-out;
+}
+
+.live-previewing #livetv { background: transparent; }
+
+.live-previewing #livetv .page-head,
+.live-previewing #livetv .livetv-tabs {
+    opacity: 0.1;
+    transform: translateY(-24px) scale(0.9);
+}
+
+/* One row of the whole group along the bottom, scrolled sideways like the Home rows. */
+.live-previewing #livetv-port {
+    top: 770px;
+    bottom: auto;
+    height: 300px;
+}
+
+/* Captions in the full-screen player, sized for across the room. */
+#live-video::cue {
+    font-size: 44px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.75);
+}
+.live-previewing .hints { opacity: 0; }
+
+/* A channel that did not start this time. */
+.channel.down .label::after {
+    content: " · not available";
+    color: var(--faint);
+}
+
+/* Flat panel, no blur or gradient: see the performance notes at the top of this file. */
+.player-banner {
+    position: absolute;
+    left: var(--edge);
+    bottom: 80px;
+    min-width: 560px;
+    max-width: 1200px;
+    padding: 28px 36px;
+    border-radius: 22px;
+    background: rgba(9, 11, 16, 0.82);
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+
+.player-banner.visible { opacity: 1; }
+
+.player-name {
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+.player-meta {
+    margin-top: 6px;
+    font-size: 26px;
+    color: var(--muted);
+}
+
+.player-status {
+    margin-top: 14px;
+    font-size: 28px;
+}
+
+.player-status:empty { display: none; }
+
+.player-keys {
+    margin-top: 18px;
+    font-size: 22px;
+    color: var(--faint);
+}

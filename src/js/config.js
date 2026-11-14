@@ -52,6 +52,20 @@ window.LAUNCHER_CONFIG = {
         trailerSecret: null     // relay's RELAY_SECRET; set it in js/config.local.js, never here
     },
 
+    /*
+     * Live TV (js/livetv.js): free channels from js/channels.js, opened from the "Live TV" tile.
+     * playlists adds M3U files on top, e.g. a country list from github.com/iptv-org/iptv:
+     *   playlists: ['https://iptv-org.github.io/iptv/countries/fr.m3u']
+     *   playlists: [{ url: 'https://…/list.m3u', group: 'Mine' }]   (one tab for the whole file)
+     * Those lists are not checked the way the built-in ones are: expect dead and duplicate entries.
+     */
+    liveTv: {
+        enabled: true,
+        previews: true,         // a highlighted channel plays behind the grid, like For you trailers
+        previewVolume: 50,      // 0-100 while previewing; full screen plays at the TV's volume
+        playlists: []
+    },
+
     inputs: [
         { hdmi: 1, label: 'Windows PC', brand: 'pc' }
     ],

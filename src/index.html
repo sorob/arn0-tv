@@ -9,6 +9,11 @@
 <body>
     <div id="stage">
         <div id="bg"></div>
+        <!-- Live TV picture (js/livetv.js), shared by the grid preview and the full-screen player. -->
+        <div id="live-layer">
+            <video id="live-video" autoplay playsinline></video>
+            <div class="live-shade"></div>
+        </div>
 
         <section id="home" class="view">
             <header class="clock">
@@ -45,6 +50,24 @@
                 <div id="all-count"></div>
             </header>
             <div class="grid-viewport"><div id="all-grid" class="grid"></div></div>
+        </section>
+
+        <section id="livetv" class="view page hidden">
+            <header class="page-head">
+                <h1>Live TV</h1>
+                <div id="livetv-count"></div>
+            </header>
+            <div id="livetv-tabs" class="chips livetv-tabs"></div>
+            <div id="livetv-port" class="grid-viewport livetv-viewport"><div id="livetv-grid" class="grid"></div></div>
+        </section>
+
+        <section id="player" class="view hidden">
+            <div id="player-banner" class="player-banner">
+                <div id="player-name" class="player-name"></div>
+                <div id="player-meta" class="player-meta"></div>
+                <div id="player-status" class="player-status"></div>
+                <div class="player-keys">▲▼ Channel · OK Captions · Back Channels</div>
+            </div>
         </section>
 
         <section id="settings" class="view page hidden">
@@ -213,6 +236,8 @@
     <script src="js/foryou.js"></script>
     <script src="js/settings.js"></script>
     <script src="js/runner-game.js"></script>
+    <script src="js/channels.js"></script>
+    <script src="js/livetv.js"></script>
     <script src="js/boot.js"></script>
 </body>
 </html>

@@ -16,6 +16,7 @@
     Settings.init();
     Screensaver.init();
     Weather.start();
+    LiveTV.init();
     Home.init();
 
     // Experimental: start the background watcher that brings the launcher back after an app

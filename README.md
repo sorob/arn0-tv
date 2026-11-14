@@ -118,11 +118,28 @@ OK / Up jumps, Down ducks, Back returns Home. The code alternates rather than re
 because a held remote key auto-repeats, which would both break a run-based code and fire it by
 accident while sweeping along a row.
 
+### Live TV
+
+The **Live TV** tile on Home opens about 95 free channels in tabs: News, World, Weather, Sports,
+Kids, Entertainment, France (in French) and Iran (Persian, mostly channels broadcasting from
+abroad). Resting on a channel previews it behind the page, as For you does with trailers, and the
+grid becomes one row of the whole tab for browsing with ◀▶. OK goes full screen on the same stream;
+there ▲▼ or the remote's CH rocker change channel, OK turns closed captions on or off (most US
+channels carry them), Back returns to the row.
+
+The list is [`src/js/channels.js`](src/js/channels.js). Every entry is a free stream published by
+the broadcaster or its own free ad-supported service, found through
+[iptv-org](https://github.com/iptv-org/iptv) and checked before it went in. Paid channels
+re-streamed by third parties are left out on purpose. Free streams move without notice, so a
+channel that fails shows "Not available right now". `liveTv.playlists` in `config.js` adds whole
+M3U files (e.g. an iptv-org country list) on top; those are not checked.
+
 ### Layout
 
 ```
 src/                  everything that goes into the .wgt
   config.xml          Tizen manifest (app id, privileges)
+  js/channels.js      free Live TV channels; js/livetv.js is the grid and player
   css/style.css       1920x1080 stage; performance rules measured, not assumed (see its header)
   fonts/              Manrope, Inter, Outfit, DM Sans (OFL), bundled so nothing loads from the network
   img/marks/          brand marks (Simple Icons CC0, Custom Brand Icons MIT; see SOURCES.md)
